@@ -1,4 +1,4 @@
-# Import pygame first
+
 import pygame
 from pathlib import Path
 
