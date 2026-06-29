@@ -99,6 +99,8 @@ class GameplayScene(BaseScene):
         self.algorithm_name = "BFS"
         self.generator = None
         self.algorithm_buttons = []
+        self.randomize_button = None
+        self.back_button = None
         self.visited = set()
         self.frontier = set()
         self.final_path = []
@@ -127,6 +129,10 @@ class GameplayScene(BaseScene):
 
     def handle_event(self, event):
         self.dialogue.handle_event(event)
+        if self.randomize_button is not None:
+            self.randomize_button.handle_event(event)
+        if self.back_button is not None:
+            self.back_button.handle_event(event)
         for button in self.algorithm_buttons:
             button.handle_event(event)
 
@@ -172,6 +178,18 @@ class GameplayScene(BaseScene):
         gap = 5
         total_h = len(algorithms) * button_h + (len(algorithms) - 1) * gap
         top = panel.bottom - total_h - 12
+        self.randomize_button = Button(
+            pygame.Rect(panel.left + 12, top - button_h - gap, panel.width - 24, button_h),
+            "RANDOMIZE",
+            font_size=11,
+            on_click=self._toggle_random_demo,
+        )
+        self.back_button = Button(
+            pygame.Rect(panel.left + 12, top - 2 * button_h - 2 * gap, panel.width - 24, button_h),
+            "BACK",
+            font_size=11,
+            on_click=self._back_to_level_select,
+        )
         self.algorithm_buttons = []
         for i, name in enumerate(algorithms):
             rect = pygame.Rect(panel.left + 12, top + i * (button_h + gap), panel.width - 24, button_h)
@@ -263,6 +281,8 @@ class GameplayScene(BaseScene):
         if reset_energy:
             self.game_state.restart_level()
         self.grid = self._build_grid(self.game_state.level)
+        if self.game_state.level == 2:
+            self._randomize_value_cells(self.grid)
         self.grid_rect, self.cell_size = self._grid_geometry(self.grid.cols, self.grid.rows)
         self.player.place_at_grid(*self.grid.start, self.grid_rect.topleft, self.cell_size)
         self.grid.reveal_around(*self.grid.start, radius=1)
@@ -288,7 +308,6 @@ class GameplayScene(BaseScene):
                     grid.set_kind(col, row, kind)
         grid.set_kind(*grid.start, "start")
         grid.set_kind(*grid.goal, "trophy")
-        grid.reveal_around(*grid.start, radius=1)
         return grid
 
     def _grid_geometry(self, cols, rows):
@@ -343,6 +362,54 @@ class GameplayScene(BaseScene):
         if move_target and move_target != (self.player.col, self.player.row):
             self._move_player(move_target)
 
+    def _toggle_random_demo(self):
+        if self.grid is None:
+            return
+        self._randomize_value_cells(self.grid)
+        self.grid.reveal_around(*self.grid.start, radius=1)
+        self.generator = ALGORITHM_FACTORIES[self.algorithm_name](self.grid, start=(self.player.col, self.player.row))
+        self.visited = {self.current}
+        self.frontier = set()
+        self.final_path = []
+        self.neighbor_scores = {}
+        self.chosen = None
+        self.temperature = None
+        self.finished = False
+        self.auto_play = False
+        self.step_timer = 0.0
+
+    def _back_to_level_select(self):
+        # Preserve current game state but go back to level selection for customization
+        self.game_state.suggest_algorithm = None
+        self.manager.change(C.STATE_LEVEL_SELECT)
+
+    def _randomize_value_cells(self, grid):
+        for (col, row), cell in grid.cells.items():
+            if cell.kind == "wall":
+                continue
+            if (col, row) == grid.goal:
+                continue
+            value = random.choices(
+                population=[-10, -8, -6, -4, -2, 0, 2, 4, 6, 8, 10],
+                weights=[5, 8, 10, 12, 15, 15, 12, 10, 8, 5, 5],
+                k=1,
+            )[0]
+            cell.value = value
+            if value >= 6:
+                cell.kind = "grass"
+            elif value > 0:
+                cell.kind = "path"
+            elif value == 0:
+                cell.kind = "path"
+            elif value >= -4:
+                cell.kind = "danger"
+            else:
+                cell.kind = "fire"
+        if grid.start in grid.cells:
+            grid.cells[grid.start].value = random.choice([0, 2, 4])
+            grid.cells[grid.start].kind = "start"
+        grid.set_kind(*grid.goal, "trophy")
+
     def _set_hill_climbing_dialogue(self, step):
         chosen = step.get("chosen")
         if chosen is None:
@@ -371,9 +438,11 @@ class GameplayScene(BaseScene):
         self.player.move_to_grid(pos[0], pos[1], self.grid_rect.topleft, self.cell_size)
         self.current = pos
         self.grid.reveal_around(*pos, radius=1)
-        cost = cell.cost or 0
-        if cost < 0:
-            self.game_state.spend_energy(abs(cost))
+        energy_change = cell.cost or 0
+        if energy_change < 0:
+            self.game_state.spend_energy(abs(energy_change))
+        elif energy_change > 0:
+            self.game_state.energy = min(C.MAX_ENERGY, self.game_state.energy + energy_change)
         if cell.kind in ("danger", "fire"):
             AudioManager.instance().play_sfx("danger_trigger", volume=0.8)
         else:
@@ -426,7 +495,7 @@ class GameplayScene(BaseScene):
         ox, oy = rect.left + 7, rect.top + 7
         for (col, row), cell in self.grid.cells.items():
             mini = pygame.Rect(ox + col * cell_w, oy + row * cell_h, cell_w, cell_h)
-            pygame.draw.rect(surface, self._cell_color(cell.kind), mini)
+            pygame.draw.rect(surface, self._cell_color(cell.kind, cell.value), mini)
         draw_text(surface, "path", (rect.centerx, rect.bottom + 3), size=13, color=C.COL_CREAM_TEXT, align="center")
 
     def _draw_grid(self, surface):
@@ -448,7 +517,7 @@ class GameplayScene(BaseScene):
         self.player.draw(surface)
 
     def _draw_cell(self, surface, rect, cell):
-        pygame.draw.rect(surface, self._cell_color(cell.kind), rect)
+        pygame.draw.rect(surface, self._cell_color(cell.kind, cell.value), rect)
         pygame.draw.rect(surface, (48, 72, 42), rect, 1)
 
         pos = (cell.col, cell.row)
@@ -485,6 +554,10 @@ class GameplayScene(BaseScene):
             label = str(cell.cost)
             draw_text(surface, label, (rect.centerx, rect.centery - 11), size=16,
                       color=C.COL_CREAM_TEXT, align="center")
+
+        if self.algorithm_name in {"Hill Climbing", "Steepest Ascent HC", "Stochastic HC"}:
+            if pos not in self.frontier and pos != self.current and pos != self.chosen and pos not in self.final_path:
+                self._overlay(surface, rect, (0, 0, 0, 150))
 
         if not cell.revealed:
             self._overlay(surface, rect, (*C.COL_FOG, 185))
@@ -545,13 +618,26 @@ class GameplayScene(BaseScene):
         draw_text(surface, "Mui ten: dieu khien", (panel.centerx, panel.bottom - 32),
                   size=12, color=C.COL_CREAM_TEXT, align="center")
 
+        if self.back_button is not None:
+            self.back_button.draw(surface)
+        if self.randomize_button is not None:
+            self.randomize_button.draw(surface)
+
         for button in self.algorithm_buttons:
             button.enabled = not (button.text == self.algorithm_name and self.auto_play)
             button.draw(surface)
             if button.text == self.algorithm_name:
                 pygame.draw.rect(surface, C.COL_GOLD_BRIGHT, button.rect, 2, border_radius=6)
 
-    def _cell_color(self, kind):
+    def _cell_color(self, kind, value=None):
+        if value is not None:
+            if value > 0:
+                return C.COL_GRASS_LIGHT
+            if value == 0:
+                return C.COL_PATH_GREY
+            if value >= -4:
+                return C.COL_SILVER
+            return C.COL_DANGER_RED
         return {
             "grass": C.COL_GRASS_LIGHT,
             "path": C.COL_PATH_GREY,
