@@ -179,11 +179,16 @@ class GameplayScene(BaseScene):
 
     def _select_algorithm(self, name):
         if name == self.algorithm_name:
+            self.game_state.suggest_algorithm = None
+            if not self.auto_play:
+                self.auto_play = True
+                self.step_timer = 0.0
             return
         self.algorithm_name = name
         self.game_state.suggest_algorithm = None
         self.game_state.restart_level()
         self._reset_algorithm_run(reset_energy=False)
+        self.auto_play = True
 
     def _handle_player_move(self, key):
         if not self._can_control_player():
@@ -261,7 +266,7 @@ class GameplayScene(BaseScene):
         self.chosen = None
         self.temperature = None
         self.finished = False
-        self.auto_play = True
+        self.auto_play = False
         self.step_timer = 0.0
         self.generator = ALGORITHM_FACTORIES[self.algorithm_name](self.grid)
 
@@ -533,7 +538,7 @@ class GameplayScene(BaseScene):
                   size=12, color=C.COL_CREAM_TEXT, align="center")
 
         for button in self.algorithm_buttons:
-            button.enabled = button.text != self.algorithm_name
+            button.enabled = not (button.text == self.algorithm_name and self.auto_play)
             button.draw(surface)
             if button.text == self.algorithm_name:
                 pygame.draw.rect(surface, C.COL_GOLD_BRIGHT, button.rect, 2, border_radius=6)
