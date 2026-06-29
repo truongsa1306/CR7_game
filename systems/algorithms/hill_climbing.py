@@ -52,6 +52,8 @@ SIMULATED-ANNEALING(problem, schedule):
 import math
 import random
 
+from entities.grid_cell import ORTHOGONAL_DIRECTIONS
+
 _UNSET = object()
 
 
@@ -83,11 +85,24 @@ def simple_hill_climbing_steps(grid, start=_UNSET, rng=None):
         scores        = {}
         chosen        = None
 
-        for cell in grid.neighbors(*current):
-            pos        = (cell.col, cell.row)
-            score      = grid.heuristic_value(*pos)
+        for dc, dr in ORTHOGONAL_DIRECTIONS:
+            nc, nr = current[0] + dc, current[1] + dr
+            if not grid.in_bounds(nc, nr):
+                continue
+            cell = grid.get(nc, nr)
+            if cell is None or not cell.passable:
+                continue
+            pos   = (nc, nr)
+            score = grid.heuristic_value(*pos)
             scores[pos] = score
-            # Chọn ngay ô ĐẦU TIÊN cải thiện (first-choice)
+            yield {
+                "current":          current,
+                "neighbor_scores":  {pos: score},
+                "chosen":           None,
+                "stuck":            False,
+                "path":             None,
+                "temperature":      None,
+            }
             if chosen is None and score > current_score:
                 chosen = pos
 
@@ -124,12 +139,26 @@ def steepest_ascent_hill_climbing_steps(grid, start=_UNSET, rng=None):
         scores                 = {}
         best_pos, best_score   = None, current_score  # ngưỡng tối thiểu = current
 
-        for cell in grid.neighbors(*current):
-            pos        = (cell.col, cell.row)
-            score      = grid.heuristic_value(*pos)
+        for dc, dr in ORTHOGONAL_DIRECTIONS:
+            nc, nr = current[0] + dc, current[1] + dr
+            if not grid.in_bounds(nc, nr):
+                continue
+            cell = grid.get(nc, nr)
+            if cell is None or not cell.passable:
+                continue
+            pos   = (nc, nr)
+            score = grid.heuristic_value(*pos)
             scores[pos] = score
             if score > best_score:
                 best_score, best_pos = score, pos
+            yield {
+                "current":          current,
+                "neighbor_scores":  {pos: score},
+                "chosen":           None,
+                "stuck":            False,
+                "path":             None,
+                "temperature":      None,
+            }
 
         stuck = best_pos is None
         yield {
@@ -166,17 +195,30 @@ def stochastic_hill_climbing_steps(grid, start=_UNSET, rng=None):
         scores        = {}
         uphill        = []   # (pos, improvement)
 
-        for cell in grid.neighbors(*current):
-            pos        = (cell.col, cell.row)
-            score      = grid.heuristic_value(*pos)
+        for dc, dr in ORTHOGONAL_DIRECTIONS:
+            nc, nr = current[0] + dc, current[1] + dr
+            if not grid.in_bounds(nc, nr):
+                continue
+            cell = grid.get(nc, nr)
+            if cell is None or not cell.passable:
+                continue
+            pos   = (nc, nr)
+            score = grid.heuristic_value(*pos)
             scores[pos] = score
             if score > current_score:
                 uphill.append((pos, score - current_score))
+            yield {
+                "current":          current,
+                "neighbor_scores":  {pos: score},
+                "chosen":           None,
+                "stuck":            False,
+                "path":             None,
+                "temperature":      None,
+            }
 
         chosen = None
         if uphill:
             weights = [w for _, w in uphill]
-            # rng.choices trả list; lấy phần tử đầu
             chosen = rng.choices([p for p, _ in uphill], weights=weights, k=1)[0]
 
         stuck = chosen is None

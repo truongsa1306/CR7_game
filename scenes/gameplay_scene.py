@@ -99,6 +99,7 @@ class GameplayScene(BaseScene):
         self.algorithm_name = "BFS"
         self.generator = None
         self.algorithm_buttons = []
+        self.randomize_button = None
         self.visited = set()
         self.frontier = set()
         self.final_path = []
@@ -127,6 +128,8 @@ class GameplayScene(BaseScene):
 
     def handle_event(self, event):
         self.dialogue.handle_event(event)
+        if self.randomize_button is not None:
+            self.randomize_button.handle_event(event)
         for button in self.algorithm_buttons:
             button.handle_event(event)
 
@@ -172,6 +175,12 @@ class GameplayScene(BaseScene):
         gap = 5
         total_h = len(algorithms) * button_h + (len(algorithms) - 1) * gap
         top = panel.bottom - total_h - 12
+        self.randomize_button = Button(
+            pygame.Rect(panel.left + 12, top - button_h - gap, panel.width - 24, button_h),
+            "RANDOMIZE",
+            font_size=11,
+            on_click=self._toggle_random_demo,
+        )
         self.algorithm_buttons = []
         for i, name in enumerate(algorithms):
             rect = pygame.Rect(panel.left + 12, top + i * (button_h + gap), panel.width - 24, button_h)
@@ -343,6 +352,29 @@ class GameplayScene(BaseScene):
         if move_target and move_target != (self.player.col, self.player.row):
             self._move_player(move_target)
 
+    def _toggle_random_demo(self):
+        if self.grid is None:
+            return
+        self._randomize_value_cells(self.grid)
+        self.generator = ALGORITHM_FACTORIES[self.algorithm_name](self.grid, start=(self.player.col, self.player.row))
+        self.visited = {self.current}
+        self.frontier = set()
+        self.final_path = []
+        self.neighbor_scores = {}
+        self.chosen = None
+        self.temperature = None
+        self.finished = False
+        self.auto_play = False
+        self.step_timer = 0.0
+
+    def _randomize_value_cells(self, grid):
+        for (col, row), cell in grid.cells.items():
+            if (col, row) in (grid.start, grid.goal):
+                continue
+            if cell.kind == "wall":
+                continue
+            cell.value = random.randint(-8, 10)
+
     def _set_hill_climbing_dialogue(self, step):
         chosen = step.get("chosen")
         if chosen is None:
@@ -371,9 +403,11 @@ class GameplayScene(BaseScene):
         self.player.move_to_grid(pos[0], pos[1], self.grid_rect.topleft, self.cell_size)
         self.current = pos
         self.grid.reveal_around(*pos, radius=1)
-        cost = cell.cost or 0
-        if cost < 0:
-            self.game_state.spend_energy(abs(cost))
+        energy_change = cell.cost or 0
+        if energy_change < 0:
+            self.game_state.spend_energy(abs(energy_change))
+        elif energy_change > 0:
+            self.game_state.energy = min(C.MAX_ENERGY, self.game_state.energy + energy_change)
         if cell.kind in ("danger", "fire"):
             AudioManager.instance().play_sfx("danger_trigger", volume=0.8)
         else:
@@ -544,6 +578,9 @@ class GameplayScene(BaseScene):
 
         draw_text(surface, "Mui ten: dieu khien", (panel.centerx, panel.bottom - 32),
                   size=12, color=C.COL_CREAM_TEXT, align="center")
+
+        if self.randomize_button is not None:
+            self.randomize_button.draw(surface)
 
         for button in self.algorithm_buttons:
             button.enabled = not (button.text == self.algorithm_name and self.auto_play)

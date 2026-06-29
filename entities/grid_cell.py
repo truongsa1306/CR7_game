@@ -24,9 +24,12 @@ class Cell:
     g: float = 0.0           # cost-so-far (informed search display)
     h: float = 0.0           # heuristic estimate to goal
     f: float = 0.0           # g + h
+    value: int | None = None # numeric override for cell cost / energy value
 
     @property
     def cost(self):
+        if self.value is not None:
+            return self.value
         return C.CELL_COST.get(self.kind, -1)
 
     @property
@@ -86,17 +89,19 @@ class GridModel:
 
     def heuristic_value(self, col, row):
         """Used by Hill Climbing levels: higher is better. Combines
-        proximity to the goal with cell safety, roughly matching the
-        'Heuristic Lân Cận' panel in the reference screenshots.
+        proximity to the goal with cell safety / numeric value.
 
-        Nếu goal=None, trả về giá trị dựa trên safety của ô thôi
-        (không có đích → không ước tính khoảng cách).
+        Nếu goal=None, trả về giá trị dựa trên safety hoặc giá trị ô.
         """
         cell = self.cells[(col, row)]
-        danger_penalty = {"fire": 8, "danger": 3}.get(cell.kind, 0)
         if self.goal is None:
-            return 10 - danger_penalty   # chỉ dựa trên safety
+            if cell.value is not None:
+                return cell.value
+            return 10 - {"fire": 8, "danger": 3}.get(cell.kind, 0)
+
         max_dist = self.cols + self.rows
         dist = self.manhattan((col, row), self.goal)
         proximity_score = (max_dist - dist) * 2
-        return proximity_score - danger_penalty
+        if cell.value is not None:
+            return proximity_score + cell.value
+        return proximity_score - {"fire": 8, "danger": 3}.get(cell.kind, 0)
