@@ -41,8 +41,8 @@ ALGORITHM_FACTORIES = {
     "A*": astar_steps,
     "Hill Climbing": simple_hill_climbing_steps,
     "Steepest Ascent HC": steepest_ascent_hill_climbing_steps,
-    "Stochastic HC": lambda grid: stochastic_hill_climbing_steps(grid, random.Random(17)),
-    "Simulated Annealing": lambda grid: simulated_annealing_steps(grid, rng=random.Random(23)),
+    "Stochastic HC": lambda grid, start=None: stochastic_hill_climbing_steps(grid, start=start, rng=random.Random(17)),
+    "Simulated Annealing": lambda grid, start=None: simulated_annealing_steps(grid, start=start, rng=random.Random(23)),
 }
 
 
@@ -184,11 +184,19 @@ class GameplayScene(BaseScene):
                 self.auto_play = True
                 self.step_timer = 0.0
             return
+
         self.algorithm_name = name
         self.game_state.suggest_algorithm = None
-        self.game_state.restart_level()
-        self._reset_algorithm_run(reset_energy=False)
+        self.generator = ALGORITHM_FACTORIES[self.algorithm_name](self.grid, start=(self.player.col, self.player.row))
+        self.visited = {self.current}
+        self.frontier = set()
+        self.final_path = []
+        self.neighbor_scores = {}
+        self.chosen = None
+        self.temperature = None
+        self.finished = False
         self.auto_play = True
+        self.step_timer = 0.0
 
     def _handle_player_move(self, key):
         if not self._can_control_player():
@@ -268,7 +276,7 @@ class GameplayScene(BaseScene):
         self.finished = False
         self.auto_play = False
         self.step_timer = 0.0
-        self.generator = ALGORITHM_FACTORIES[self.algorithm_name](self.grid)
+        self.generator = ALGORITHM_FACTORIES[self.algorithm_name](self.grid, start=self.current)
 
     def _build_grid(self, level):
         cols, rows = C.LEVEL_GRID_SIZE[level]
