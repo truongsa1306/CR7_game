@@ -74,7 +74,7 @@ LOGO_RECT = pygame.Rect(450, 80, 124, 60)
 
 GRID_ORIGIN = (40, 80)
 GRID_RECT = pygame.Rect(40, 80, 640, 400)
-SIDE_PANEL_RECT = pygame.Rect(700, 80, 300, 400)
+SIDE_PANEL_RECT = pygame.Rect(700, 80, 300, 300)
 
 HEADER_ENERGY_RECT = pygame.Rect(40, 30, 200, 40)
 HEADER_TITLE_RECT = pygame.Rect(300, 30, 424, 40)

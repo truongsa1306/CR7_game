@@ -15,6 +15,14 @@ class GameplayControlsTests(unittest.TestCase):
         self.assertEqual(scene.algorithm_name, 'DFS')
         self.assertTrue(scene.auto_play)
 
+    def test_select_algorithm_clears_suggest_algorithm(self):
+        manager = type('Manager', (), {'change': lambda self, state: None})()
+        game_state = GameState()
+        game_state.suggest_algorithm = 'Stochastic HC'
+        scene = GameplayScene(manager, game_state)
+        scene._select_algorithm('DFS')
+        self.assertIsNone(game_state.suggest_algorithm)
+
     def test_next_step_towards_returns_orthogonal_neighbor(self):
         manager = type('Manager', (), {'change': lambda self, state: None})()
         game_state = GameState()

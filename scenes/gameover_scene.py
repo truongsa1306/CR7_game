@@ -44,4 +44,5 @@ class GameOverScene(CutsceneScene):
 
     def _restart_level(self):
         self.game_state.restart_level()
+        self.game_state.suggest_algorithm = None
         self.manager.change(C.STATE_GAMEPLAY)

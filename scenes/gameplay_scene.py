@@ -181,6 +181,7 @@ class GameplayScene(BaseScene):
         if name == self.algorithm_name:
             return
         self.algorithm_name = name
+        self.game_state.suggest_algorithm = None
         self.game_state.restart_level()
         self._reset_algorithm_run(reset_energy=False)
 
@@ -298,11 +299,19 @@ class GameplayScene(BaseScene):
             return
 
         self.current = step.get("current") or self.current
-        self.frontier = set(step.get("frontier", []))
-        self.visited = set(step.get("visited", self.visited))
         self.neighbor_scores = step.get("neighbor_scores", {})
         self.chosen = step.get("chosen")
         self.temperature = step.get("temperature")
+
+        if self.algorithm_name in {"Hill Climbing", "Steepest Ascent HC", "Stochastic HC"}:
+            self.frontier = set(self.neighbor_scores.keys())
+            self.visited = set()
+        else:
+            self.frontier = set(step.get("frontier", []))
+            self.visited = set(step.get("visited", self.visited))
+
+        if self.algorithm_name in {"Hill Climbing", "Steepest Ascent HC", "Stochastic HC"}:
+            self._set_hill_climbing_dialogue(step)
 
         if step.get("stuck"):
             self._go_gameover("stuck")
@@ -320,6 +329,18 @@ class GameplayScene(BaseScene):
         move_target = self.chosen or self.current
         if move_target and move_target != (self.player.col, self.player.row):
             self._move_player(move_target)
+
+    def _set_hill_climbing_dialogue(self, step):
+        chosen = step.get("chosen")
+        if chosen is None:
+            message = "Bước này không tốt, để chọn bước khác xem nào."
+        elif self.algorithm_name == "Hill Climbing":
+            message = f"Ô {chosen} tốt hơn, chọn bước đó."
+        elif self.algorithm_name == "Steepest Ascent HC":
+            message = f"Chọn ô tốt nhất {chosen} trong 4 ô xung quanh."
+        else:
+            message = f"Chọn ô tốt hơn {chosen} trong tập các láng giềng."
+        self.dialogue.set_text(message, kit_index=self.game_state.kit_index)
 
     def _move_player(self, pos):
         if self.grid is None:
@@ -418,10 +439,10 @@ class GameplayScene(BaseScene):
         pygame.draw.rect(surface, (48, 72, 42), rect, 1)
 
         pos = (cell.col, cell.row)
-        if pos in self.visited:
+        if pos in self.frontier and self.algorithm_name in {"Hill Climbing", "Steepest Ascent HC", "Stochastic HC"}:
+            self._overlay(surface, rect, (*C.COL_FRONTIER, 100))
+        elif pos in self.visited:
             self._overlay(surface, rect, (*C.COL_VISITED, 75))
-        if pos in self.frontier:
-            self._overlay(surface, rect, (*C.COL_FRONTIER, 90))
         if pos in self.final_path:
             self._overlay(surface, rect, (*C.COL_PATH_FINAL, 120))
 
@@ -430,6 +451,8 @@ class GameplayScene(BaseScene):
             pygame.draw.circle(surface, C.COL_GOLD_BRIGHT, rect.center, max(8, min(rect.width, rect.height) // 2 - 4), 3)
         elif pos == self.current:
             pygame.draw.rect(surface, C.COL_GOLD_BRIGHT, rect.inflate(-4, -4), 2)
+        if pos == self.chosen and pos != self.current:
+            pygame.draw.rect(surface, C.COL_GOLD, rect.inflate(-10, -10), 3)
 
         if cell.kind == "fire":
             self.fire.draw(surface, rect.inflate(-10, -8))
