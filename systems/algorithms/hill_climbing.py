@@ -105,6 +105,7 @@ def simple_hill_climbing_steps(grid, start=_UNSET, rng=None):
             }
             if chosen is None and score > current_score:
                 chosen = pos
+                break
 
         stuck = chosen is None
         yield {
