@@ -72,18 +72,21 @@ def _resolve_start(grid, start, rng=None):
 # SIMPLE HILL CLIMBING
 # Xét lần lượt láng giềng, chọn ngay ô ĐẦU TIÊN có chi phí nhỏ hơn hiện tại.
 # ══════════════════════════════════════════════════════════════════
-def simple_hill_climbing_steps(grid, start=_UNSET, rng=None):
+def simple_hill_climbing_steps(grid, start=_UNSET, rng=None, health=None):
     """Simple Hill Climbing – "first-choice".
     Dừng (stuck=True) khi không có ô láng giềng nào có chi phí thấp hơn hiện tại.
     Không có goal test bên trong (đúng với mã giả local search).
     """
     start = grid.start if start is _UNSET else start
     current = _resolve_start(grid, start, rng)
+    current_health = health if health is not None else 100
 
     while True:
         current_score = grid.heuristic_value(*current)
         scores        = {}
         chosen        = None
+        last_pos      = None
+        last_score    = None
 
         for dc, dr in ORTHOGONAL_DIRECTIONS:
             nc, nr = current[0] + dc, current[1] + dr
@@ -92,9 +95,13 @@ def simple_hill_climbing_steps(grid, start=_UNSET, rng=None):
             cell = grid.get(nc, nr)
             if cell is None or not cell.passable:
                 continue
-            pos   = (nc, nr)
+            pos = (nc, nr)
+            if health is not None and not grid.can_afford(current_health, *pos):
+                continue
             score = grid.heuristic_value(*pos)
             scores[pos] = score
+            last_pos = pos
+            last_score = score
             yield {
                 "current":          current,
                 "neighbor_scores":  {pos: score},
@@ -110,7 +117,7 @@ def simple_hill_climbing_steps(grid, start=_UNSET, rng=None):
         stuck = chosen is None
         yield {
             "current":          current,
-            "neighbor_scores":  scores,
+            "neighbor_scores":  {chosen: grid.heuristic_value(*chosen)} if chosen is not None else ({last_pos: last_score} if last_pos is not None else {}),
             "chosen":           chosen,
             "stuck":            stuck,
             "path":             None,
@@ -120,6 +127,8 @@ def simple_hill_climbing_steps(grid, start=_UNSET, rng=None):
         if stuck:
             return          # đỉnh cục bộ – scene xử lý game over
 
+        if health is not None:
+            current_health += grid.health_delta(*chosen)
         current = chosen
 
 
@@ -127,13 +136,14 @@ def simple_hill_climbing_steps(grid, start=_UNSET, rng=None):
 # STEEPEST-ASCENT HILL CLIMBING
 # Xét TẤT CẢ láng giềng, chọn ô có chi phí nhỏ nhất.
 # ══════════════════════════════════════════════════════════════════
-def steepest_ascent_hill_climbing_steps(grid, start=_UNSET, rng=None):
+def steepest_ascent_hill_climbing_steps(grid, start=_UNSET, rng=None, health=None):
     """Steepest-Ascent Hill Climbing – "best-improvement".
     So sánh tất cả láng giềng, chọn ô có chi phí thấp nhất.
     Nếu không có láng giềng nào thấp hơn hiện tại → stuck.
     """
     start = grid.start if start is _UNSET else start
     current = _resolve_start(grid, start, rng)
+    current_health = health if health is not None else 100
 
     while True:
         current_score          = grid.heuristic_value(*current)
@@ -147,19 +157,13 @@ def steepest_ascent_hill_climbing_steps(grid, start=_UNSET, rng=None):
             cell = grid.get(nc, nr)
             if cell is None or not cell.passable:
                 continue
-            pos   = (nc, nr)
+            pos = (nc, nr)
+            if health is not None and not grid.can_afford(current_health, *pos):
+                continue
             score = grid.heuristic_value(*pos)
             scores[pos] = score
             if score < best_score:
                 best_score, best_pos = score, pos
-            yield {
-                "current":          current,
-                "neighbor_scores":  {pos: score},
-                "chosen":           None,
-                "stuck":            False,
-                "path":             None,
-                "temperature":      None,
-            }
 
         stuck = best_pos is None
         yield {
@@ -174,6 +178,8 @@ def steepest_ascent_hill_climbing_steps(grid, start=_UNSET, rng=None):
         if stuck:
             return
 
+        if best_pos is not None and health is not None:
+            current_health += grid.health_delta(*best_pos)
         current = best_pos
 
 
@@ -181,7 +187,7 @@ def steepest_ascent_hill_climbing_steps(grid, start=_UNSET, rng=None):
 # STOCHASTIC HILL CLIMBING
 # Lọc các láng giềng tốt hơn, chọn NGẪU NHIÊN có trọng số.
 # ══════════════════════════════════════════════════════════════════
-def stochastic_hill_climbing_steps(grid, start=_UNSET, rng=None):
+def stochastic_hill_climbing_steps(grid, start=_UNSET, rng=None, health=None):
     """Stochastic Hill Climbing.
     Trong tập các láng giềng có chi phí thấp hơn hiện tại, chọn ngẫu nhiên có
     trọng số tỷ lệ với mức độ cải thiện. Có thể thoát local minima tốt hơn
@@ -190,6 +196,7 @@ def stochastic_hill_climbing_steps(grid, start=_UNSET, rng=None):
     rng     = rng or random.Random()
     start   = grid.start if start is _UNSET else start
     current = _resolve_start(grid, start, rng)
+    current_health = health if health is not None else 100
 
     while True:
         current_score = grid.heuristic_value(*current)
@@ -203,19 +210,13 @@ def stochastic_hill_climbing_steps(grid, start=_UNSET, rng=None):
             cell = grid.get(nc, nr)
             if cell is None or not cell.passable:
                 continue
-            pos   = (nc, nr)
+            pos = (nc, nr)
+            if health is not None and not grid.can_afford(current_health, *pos):
+                continue
             score = grid.heuristic_value(*pos)
             scores[pos] = score
             if score < current_score:
                 downhill.append((pos, current_score - score))
-            yield {
-                "current":          current,
-                "neighbor_scores":  {pos: score},
-                "chosen":           None,
-                "stuck":            False,
-                "path":             None,
-                "temperature":      None,
-            }
 
         chosen = None
         if downhill:
@@ -235,6 +236,8 @@ def stochastic_hill_climbing_steps(grid, start=_UNSET, rng=None):
         if stuck:
             return
 
+        if health is not None:
+            current_health += grid.health_delta(*chosen)
         current = chosen
 
 
@@ -250,6 +253,7 @@ def simulated_annealing_steps(
     cooling=0.95,
     min_temp=0.5,
     rng=None,
+    health=None,
 ):
     """Simulated Annealing – "Precision Sprints" (Level 3).
 
@@ -266,6 +270,7 @@ def simulated_annealing_steps(
     rng         = rng or random.Random()
     start       = grid.start if start is _UNSET else start
     current     = _resolve_start(grid, start, rng)
+    current_health = health if health is not None else 100
     temperature = float(initial_temp)
 
     while True:
@@ -278,6 +283,8 @@ def simulated_annealing_steps(
         if candidates:
             pick  = rng.choice(candidates)
             pos   = (pick.col, pick.row)
+            if health is not None and not grid.can_afford(current_health, *pos):
+                continue
             delta = scores[pos] - current_score
 
             if delta > 0:
@@ -307,7 +314,8 @@ def simulated_annealing_steps(
         if stuck:
             return          # scene xử lý game over
 
-        if chosen is not None:
+        if chosen is not None and health is not None:
+            current_health += grid.health_delta(*chosen)
             current = chosen
         # Nếu chosen=None nhưng chưa stuck (T chưa đến đáy) → thử lại vòng tiếp
 
