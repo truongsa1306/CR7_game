@@ -90,12 +90,13 @@ class GridModel:
     def heuristic_value(self, col, row):
         """Used by hill-climbing and informed-search levels: lower is better.
 
-        h(n) = Manhattan distance to the goal, adjusted by the cell's value.
-        Negative cells make the heuristic larger, so the search tends to avoid
-        them unless the path is otherwise necessary.
+        The start node is initialized with h(n) = 20. Other cells use the
+        adjusted Manhattan heuristic, where negative values increase the cost.
         """
         if self.goal is None:
             return 0
+        if (col, row) == self.start:
+            return 20
         distance = self.manhattan((col, row), self.goal)
         return distance - self.health_delta(col, row)
 

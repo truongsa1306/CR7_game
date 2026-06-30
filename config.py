@@ -92,21 +92,21 @@ LEVEL_NAMES = {
     0: "Tim Kiem Mu",
     1: "Tim Kiem Co Thong Tin",
     2: "Leo Nui",
-    3: "Thu Thach"
+    3: "Tim Kiem Vo Ben"
 }
 
 LEVEL_ALGORITHMS = [
     [ALGO_BFS, ALGO_DFS, ALGO_IDS],  # Level 0: Blind Search variants
     [ALGO_UCS, ALGO_GREEDY, ALGO_ASTAR],  # Level 1: Informed Search variants
     ["Hill Climbing", "Steepest Ascent HC", "Stochastic HC"],  # Level 2: Hill Climbing variants
-    [ALGO_UCS, ALGO_GREEDY, ALGO_ASTAR],  # Level 3: UCS/Greedy/A* variants
+    [ALGO_BFS, ALGO_DFS, ALGO_UCS, ALGO_GREEDY, ALGO_ASTAR, "Hill Climbing"],  # Level 3: uncertainty demo
 ]
 LEVEL_GRID_SIZE = [(9, 5), (9, 5), (12, 7), (12, 7)]
 LEVEL_TITLES = {
     0: "LEVEL 1: TIM KIEM MU",
     1: "LEVEL 2: TIM KIEM THONG TIN",
     2: "LEVEL 3: LEO NUI",
-    3: "LEVEL 4: THU THACH"
+    3: "LEVEL 4: TIM KIEM VO BEN"
 }
 
 # Kits (Soccer Uniforms) - CR7 inspired
@@ -125,7 +125,7 @@ LEVEL_INTRO_LINES = {
     0: "Level 1: Dung tim kiem mu de tim duong di den cup. Khong co ban do!",
     1: "Level 2: Bay gio ban co ban do. Hay dung tim kiem co thong tin!",
     2: "Level 3: Hay tim duong di xuong nui. Chi xuat phat tu vi tri cao nhat!",
-    3: "Level 4: Duong di khac nhau co chi phi khac nhau. Hay tim duong toi uu!"
+    3: "Level 4: Co 2 nhom bai toan. Nhom khong quan sat chi co ? va G/CR7; nhom mot phan quan sat co ca so va ?. Bam BELIEF de mo tat ca thanh so."
 }
 
 LEVELUP_LINES = {

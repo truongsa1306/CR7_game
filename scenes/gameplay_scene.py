@@ -105,6 +105,7 @@ class GameplayScene(BaseScene):
         self.generator = None
         self.algorithm_buttons = []
         self.randomize_button = None
+        self.belief_button = None
         self.back_button = None
         self.visited = set()
         self.frontier = set()
@@ -137,6 +138,8 @@ class GameplayScene(BaseScene):
         self.dialogue.handle_event(event)
         if self.randomize_button is not None:
             self.randomize_button.handle_event(event)
+        if self.belief_button is not None:
+            self.belief_button.handle_event(event)
         if self.back_button is not None:
             self.back_button.handle_event(event)
         for button in self.algorithm_buttons:
@@ -189,6 +192,12 @@ class GameplayScene(BaseScene):
             "RANDOMIZE",
             font_size=11,
             on_click=self._toggle_random_demo,
+        )
+        self.belief_button = Button(
+            pygame.Rect(panel.left + 12, top - 2 * button_h - 2 * gap, panel.width - 24, button_h),
+            "BELIEF",
+            font_size=11,
+            on_click=self._reveal_belief,
         )
         self.back_button = Button(
             pygame.Rect(panel.left + 12, top - 2 * button_h - 2 * gap, panel.width - 24, button_h),
@@ -375,6 +384,30 @@ class GameplayScene(BaseScene):
         if self.grid is None:
             return
         self._randomize_value_cells(self.grid)
+        self.grid.reveal_around(*self.grid.start, radius=1)
+        self.generator = ALGORITHM_FACTORIES[self.algorithm_name](self.grid, start=(self.player.col, self.player.row), health=self.algorithm_health)
+        self.visited = {self.current}
+        self.frontier = set()
+        self.final_path = []
+        self.neighbor_scores = {}
+        self.chosen = None
+        self.temperature = None
+        self.finished = False
+        self.auto_play = False
+        self.step_timer = 0.0
+
+    def _reveal_belief(self):
+        if self.grid is None:
+            return
+        for (col, row), cell in self.grid.cells.items():
+            if cell.kind == "wall" or (col, row) in {self.grid.start, self.grid.goal}:
+                continue
+            if cell.value is None:
+                cell.value = random.choice([-4, -2, 0, 2, 4])
+                if cell.value >= 0:
+                    cell.kind = "path"
+                else:
+                    cell.kind = "danger" if cell.value >= -2 else "fire"
         self.grid.reveal_around(*self.grid.start, radius=1)
         self.generator = ALGORITHM_FACTORIES[self.algorithm_name](self.grid, start=(self.player.col, self.player.row), health=self.algorithm_health)
         self.visited = {self.current}
@@ -667,6 +700,8 @@ class GameplayScene(BaseScene):
             self.back_button.draw(surface)
         if self.randomize_button is not None:
             self.randomize_button.draw(surface)
+        if self.belief_button is not None:
+            self.belief_button.draw(surface)
 
         for button in self.algorithm_buttons:
             button.enabled = not (button.text == self.algorithm_name and self.auto_play)
