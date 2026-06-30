@@ -41,11 +41,14 @@ COL_WOOD_DARK = (70, 50, 20)
 COL_BLACK = (0, 0, 0)
 COL_WHITE = (255, 255, 255)
 COL_FOG = (20, 20, 30)
+COL_HIGHLIGHT_PURPLE = (148, 44, 176)
 
 # Game States
 STATE_INTRO = "INTRO"
 STATE_LEVEL_SELECT = "LEVEL_SELECT"
 STATE_GAMEPLAY = "GAMEPLAY"
+STATE_CARO = "CARO"
+STATE_EIGHT_QUEENS = "EIGHT_QUEENS"
 STATE_LEVELUP = "LEVELUP"
 STATE_GAMEOVER = "GAMEOVER"
 STATE_VICTORY = "VICTORY"
@@ -92,21 +95,27 @@ LEVEL_NAMES = {
     0: "Tim Kiem Mu",
     1: "Tim Kiem Co Thong Tin",
     2: "Leo Nui",
-    3: "Tim Kiem Vo Ben"
+    3: "Tim Kiem Vo Ben",
+    4: "Caro Doi Khang",
+    5: "8 Quan Hau"
 }
 
 LEVEL_ALGORITHMS = [
     [ALGO_BFS, ALGO_DFS, ALGO_IDS],  # Level 0: Blind Search variants
     [ALGO_UCS, ALGO_GREEDY, ALGO_ASTAR],  # Level 1: Informed Search variants
     ["Hill Climbing", "Steepest Ascent HC", "Stochastic HC"],  # Level 2: Hill Climbing variants
-    [ALGO_BFS, ALGO_UCS, ALGO_GREEDY, ALGO_ASTAR, "Hill Climbing", "Steepest Ascent HC", "Stochastic HC"],  # Level 4: uncertainty demo tabs
+    [ALGO_BFS, ALGO_UCS, ALGO_GREEDY, ALGO_ASTAR, "Hill Climbing", "Steepest Ascent HC", "Stochastic HC"],  # Level 3: uncertainty demo tabs
+    [],  # Level 4: Caro adversarial level handled by separate scene
+    [],  # Level 5: Eight-Queens handled by separate scene
 ]
-LEVEL_GRID_SIZE = [(9, 5), (9, 5), (12, 7), (12, 7)]
+LEVEL_GRID_SIZE = [(9, 5), (9, 5), (12, 7), (12, 7), (5, 5), (8, 8)]
 LEVEL_TITLES = {
     0: "LEVEL 1: TIM KIEM MU",
     1: "LEVEL 2: TIM KIEM THONG TIN",
     2: "LEVEL 3: LEO NUI",
-    3: "LEVEL 4: TIM KIEM VO BEN"
+    3: "LEVEL 4: TIM KIEM VO BEN",
+    4: "LEVEL 5: CARO DOI KHANG",
+    5: "LEVEL 6: 8 QUAN HAU"
 }
 
 # Kits (Soccer Uniforms) - CR7 inspired
@@ -115,6 +124,8 @@ KITS = {
     1: {"name": "Kit2", "label": "Blue", "color": (0, 0, 255)},
     2: {"name": "Kit3", "label": "Yellow", "color": (255, 255, 0)},
     3: {"name": "Kit4", "label": "Green", "color": (0, 255, 0)},
+    4: {"name": "Kit5", "label": "Purple", "color": (180, 80, 225)},
+    5: {"name": "Kit6", "label": "Orange", "color": (255, 145, 0)},
 }
 
 # Story Text
@@ -125,7 +136,9 @@ LEVEL_INTRO_LINES = {
     0: "Level 1: Dung tim kiem mu de tim duong di den cup. Khong co ban do!",
     1: "Level 2: Bay gio ban co ban do. Hay dung tim kiem co thong tin!",
     2: "Level 3: Hay tim duong di xuong nui. Chi xuat phat tu vi tri cao nhat!",
-    3: "Level 4: Co 2 nhom bai toan. Nhom khong quan sat chi co ? va G/CR7; nhom mot phan quan sat co ca so va ?. Bam BELIEF de mo tat ca thanh so."
+    3: "Level 4: Co 2 nhom bai toan. Nhom khong quan sat chi co ? va G/CR7; nhom mot phan quan sat co ca so va ?. Bam BELIEF de mo tat ca thanh so.",
+    4: "Level 5: doi khang caro. Chon nuoc di va dau AI su dung Minimax/Alpha-Beta/Expectimax!",
+    5: "Level 6: Giai bai toan 8 quan hau voi Backtracking, Forward Checking va Min-Conflict."
 }
 
 LEVELUP_LINES = {

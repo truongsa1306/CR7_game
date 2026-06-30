@@ -72,22 +72,24 @@ def _resolve_sources(grid, start):
 def _heuristic(grid, pos, goal):
     """Heuristic used by Greedy and A*.
 
-    h(n) = Manhattan distance to the goal adjusted by the current cell's
-    value/penalty. Negative cells make the estimate larger, so the search
-    avoids them unless they are necessary to reach the goal.
+    h(n) = Manhattan distance to the goal.
     Bằng 0 nếu goal=None.
     """
     if goal is None:
         return 0
-    cell = grid.get(*pos)
+    return grid.manhattan(pos, goal)
+
+
+def _step_cost(grid, cell):
+    """Chi phí bước đi vào ô cho g(n).
+
+    g(n) là âm của tổng điểm tích lũy khi đi qua các ô.
+    Nếu ô gây tổn hại (giá trị âm), chi phí tăng lên.
+    Nếu ô cộng điểm (giá trị dương), chi phí giảm.
+    """
     if cell is None:
         return 0
-    return grid.heuristic_value(*pos)
-
-
-def _step_cost(cell):
-    """Chi phí bước đi vào ô (luôn dương)."""
-    return abs(cell.cost) if cell.cost else 0
+    return -grid.health_delta(cell.col, cell.row)
 
 
 # ─── Driver chung ─────────────────────────────────────────────────
@@ -143,7 +145,7 @@ def _best_first_search(grid, priority_fn, start, goal, health=None):
         for cell in grid.neighbors(*current):
             pos        = (cell.col, cell.row)
             current_entry = reached[current]
-            new_g      = current_entry["g"] + _step_cost(cell)
+            new_g      = current_entry["g"] + _step_cost(grid, cell)
             old_entry  = reached.get(pos)
             if old_entry is not None and new_g >= old_entry["g"]:
                 continue

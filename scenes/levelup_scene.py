@@ -15,6 +15,7 @@ import config as C
 from effects.particles import ParticleSystem
 from scenes.cutscene_base import CutsceneScene
 from systems.audio_manager import AudioManager
+from ui.button import Button
 from ui.label import draw_text
 from ui.panel import draw_outer_frame, draw_stadium_background, draw_wood_panel
 
@@ -44,6 +45,8 @@ class LevelUpScene(CutsceneScene):
         self.elapsed = 0.0
         self.particles = ParticleSystem()
         self._sparkle_rng = random.Random(7)
+        self.back_button = Button(pygame.Rect(20, 20, 80, 28), "BACK", font_size=12,
+                                  on_click=self._go_to_level_select)
 
     def on_enter(self, **kwargs):
         new_level = self.game_state.level
@@ -83,10 +86,23 @@ class LevelUpScene(CutsceneScene):
         self._draw_algorithm_graph(surface)
         self.particles.draw(surface)
         self.dialogue.draw(surface)
+        self.back_button.draw(surface)
         draw_outer_frame(surface)
 
+    def handle_event(self, event):
+        super().handle_event(event)
+        self.back_button.handle_event(event)
+
+    def _go_to_level_select(self):
+        self.manager.change(C.STATE_LEVEL_SELECT)
+
     def _go_to_gameplay(self):
-        self.manager.change(C.STATE_GAMEPLAY)
+        if self.game_state.level == 4:
+            self.manager.change(C.STATE_CARO)
+        elif self.game_state.level == 5:
+            self.manager.change(C.STATE_EIGHT_QUEENS)
+        else:
+            self.manager.change(C.STATE_GAMEPLAY)
 
     # ------------------------------------------------------------------
     def _emit_levelup_sparkles(self, count=34):

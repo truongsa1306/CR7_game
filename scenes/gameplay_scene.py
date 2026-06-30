@@ -37,6 +37,138 @@ def _factory_with_health(fn, *args, **kwargs):
     return _wrapped
 
 
+def and_or_search_steps(grid, start=None, health=None):
+    if start is None:
+        start = grid.start
+
+    right_branch = [(1, 5), (2, 5), (2, 4), (3, 4), (4, 4), (4, 3)]
+    goal_branch = [(5, 3), (6, 3), (7, 3), (7, 2), (8, 2), (8, 1), (9, 1), (10, 1), (10, 0), (11, 0)]
+    choice_up = (4, 2)
+    choice_right = (5, 3)
+    choice_down = (4, 4)
+    branch_choices = {choice_up, choice_right, choice_down}
+
+    # 1) Darken the screen first.
+    yield {
+        "current": start,
+        "frontier": [],
+        "visited": set(),
+        "neighbor_scores": {},
+        "chosen": None,
+        "temperature": None,
+        "dark": True,
+    }
+
+    # 2) Brighten the right branch gradually while approaching the decision node.
+    for i in range(1, len(right_branch) + 1):
+        status = "Xét 3 nhánh: U R D" if i == len(right_branch) else "Xét nhánh R..."
+        step = {
+            "current": start,
+            "frontier": [],
+            "visited": set(),
+            "neighbor_scores": {},
+            "chosen": None,
+            "temperature": None,
+            "dark": True,
+            "highlight_branch": right_branch[:i],
+            "status": status,
+        }
+        if i == len(right_branch):
+            step["branch_choices"] = branch_choices
+        yield step
+
+    # 3) Select the right-hand branch and highlight the chosen option.
+    yield {
+        "current": start,
+        "frontier": [],
+        "visited": set(),
+        "neighbor_scores": {},
+        "chosen": None,
+        "temperature": None,
+        "dark": True,
+        "highlight_branch": right_branch,
+        "branch_choices": branch_choices,
+        "selected_choice": choice_right,
+        "status": "Nhánh R được chọn. Tím ô phải chứ không phải ô hiện tại.",
+    }
+
+    # 4) Light the OR branch cell by cell using A* style exploration.
+    or_path = []
+    for idx, pos in enumerate(goal_branch, 1):
+        or_path.append(pos)
+        yield {
+            "current": start,
+            "frontier": [],
+            "visited": set(),
+            "neighbor_scores": {},
+            "chosen": None,
+            "temperature": None,
+            "dark": True,
+            "highlight_branch": right_branch,
+            "branch_choices": branch_choices,
+            "selected_choice": choice_right,
+            "or_path": list(or_path),
+            "status": f"Giải nhánh OR theo A*... ({idx}/{len(goal_branch)})",
+        }
+
+    # 5) After solving R, return to the dark screen with 3 bright options.
+    yield {
+        "current": start,
+        "frontier": [],
+        "visited": set(),
+        "neighbor_scores": {},
+        "chosen": None,
+        "temperature": None,
+        "dark": True,
+        "branch_choices": branch_choices,
+        "status": "R đã giải, quay lại giao diện tối và chọn nhánh -4 phía trên.",
+    }
+
+    # 6) Try the upper -4 branch and show it as selected.
+    yield {
+        "current": start,
+        "frontier": [],
+        "visited": set(),
+        "neighbor_scores": {},
+        "chosen": None,
+        "temperature": None,
+        "dark": True,
+        "branch_choices": branch_choices,
+        "selected_choice": choice_up,
+        "status": "Chọn ô U -4 ở trên để thử nhánh tiếp theo.",
+    }
+
+    # 7) If that branch fails, go back to the dark screen with all 3 options still lit.
+    yield {
+        "current": start,
+        "frontier": [],
+        "visited": set(),
+        "neighbor_scores": {},
+        "chosen": None,
+        "temperature": None,
+        "dark": True,
+        "branch_choices": branch_choices,
+        "status": "Nhánh U -4 bị sai. Quay lại 3 ô sáng và chọn bước khác.",
+    }
+
+    # 8) Final move along the OR path.
+    yield {
+        "current": start,
+        "frontier": [],
+        "visited": set(),
+        "neighbor_scores": {},
+        "chosen": None,
+        "temperature": None,
+        "dark": True,
+        "highlight_branch": right_branch,
+        "branch_choices": branch_choices,
+        "selected_choice": choice_right,
+        "or_path": list(or_path),
+        "path": [start] + right_branch + goal_branch,
+        "status": "Đã chọn nhánh OR. CR7 di chuyển theo giải pháp.",
+    }
+
+
 ALGORITHM_FACTORIES = {
     "BFS": bfs_steps,
     "DFS": dfs_steps,
@@ -48,6 +180,7 @@ ALGORITHM_FACTORIES = {
     "Steepest Ascent HC": steepest_ascent_hill_climbing_steps,
     "Stochastic HC": _factory_with_health(stochastic_hill_climbing_steps, rng=random.Random(17)),
     "Simulated Annealing": _factory_with_health(simulated_annealing_steps, rng=random.Random(23)),
+    "AND OR SEARCH": and_or_search_steps,
 }
 
 
@@ -106,25 +239,40 @@ class GameplayScene(BaseScene):
         self.algorithm_buttons = []
         self.randomize_button = None
         self.belief_button = None
+        self.and_or_button = None
         self.back_button = None
         self.level4_toggle = None
         self.level4_tab = 0
         self.visited = set()
         self.frontier = set()
         self.final_path = []
+        self.follow_path = []
         self.current = None
         self.neighbor_scores = {}
         self.chosen = None
         self.temperature = None
+        self.depth_limit = None
+        self.restarting = False
         self.algorithm_health = 100
         self.auto_play = True
         self.step_timer = 0.0
         self.finished = False
+        self.searching = False
+        self.and_or_dark = False
+        self.and_or_branch = set()
+        self.and_or_goal = None
+        self.and_or_path = []
 
     def on_enter(self, **kwargs):
+        if self.game_state.level == 4:
+            self.manager.change(C.STATE_CARO)
+            return
+
         self.finished = False
         self.auto_play = True
         self.step_timer = 0.0
+        self.depth_limit = None
+        self.restarting = False
         self.player.set_kit(self.game_state.kit_index)
         self.dialogue.set_text(C.LEVEL_INTRO_LINES[self.game_state.level], kit_index=self.game_state.kit_index)
 
@@ -147,6 +295,8 @@ class GameplayScene(BaseScene):
             self.randomize_button.handle_event(event)
         if self.belief_button is not None:
             self.belief_button.handle_event(event)
+        if self.and_or_button is not None:
+            self.and_or_button.handle_event(event)
         if self.back_button is not None:
             self.back_button.handle_event(event)
         if self.level4_toggle is not None:
@@ -169,6 +319,14 @@ class GameplayScene(BaseScene):
         self.dialogue.update(dt)
         self.player.update(dt)
         self.fire.update(dt)
+
+        if self.follow_path and not self.player.is_moving:
+            next_pos = self.follow_path.pop(0)
+            if next_pos != (self.player.col, self.player.row):
+                self._move_player(next_pos)
+            if not self.follow_path:
+                self.dialogue.set_status("")
+            return
 
         if self.finished or self.player.is_moving or not self.dialogue.fully_revealed:
             return
@@ -197,15 +355,20 @@ class GameplayScene(BaseScene):
         if self.game_state.level == 3:
             self.level4_toggle = ToggleGroup(
                 pygame.Rect(panel.left + 12, panel.top + 18, panel.width - 24, button_h),
-                ["4.1 No Obs", "4.2 Partial Obs"],
+                ["4.1", "4.2", "4.3"],
                 on_select=self._select_level4_tab,
                 font_size=11,
             )
             self.level4_toggle.selected = self.level4_tab
             top = panel.top + 58
-            algorithms = C.LEVEL_ALGORITHMS[3]
-            columns = 2
-            btn_width = int((panel.width - 24 - gap) / columns)
+            if self.level4_tab == 2:
+                algorithms = []
+                columns = 1
+                btn_width = panel.width - 24
+            else:
+                algorithms = C.LEVEL_ALGORITHMS[3]
+                columns = 2
+                btn_width = int((panel.width - 24 - gap) / columns)
         else:
             algorithms = C.LEVEL_ALGORITHMS[self.game_state.level]
             total_h = len(algorithms) * button_h + (len(algorithms) - 1) * gap
@@ -213,24 +376,44 @@ class GameplayScene(BaseScene):
             columns = 1
             btn_width = panel.width - 24
 
-        self.randomize_button = Button(
-            pygame.Rect(panel.left + 12, panel.bottom - button_h - 12, panel.width - 24, button_h),
-            "RANDOMIZE",
-            font_size=11,
-            on_click=self._toggle_random_demo,
-        )
-        self.belief_button = Button(
-            pygame.Rect(panel.left + 12, panel.bottom - 2 * button_h - gap - 12, panel.width - 24, button_h),
-            "BELIEF",
-            font_size=11,
-            on_click=self._reveal_belief,
-        )
+        self.randomize_button = None
+        self.belief_button = None
+        self.and_or_button = None
         self.back_button = Button(
             pygame.Rect(panel.left + 12, panel.bottom - 3 * button_h - 2 * gap - 12, panel.width - 24, button_h),
             "BACK",
             font_size=11,
             on_click=self._back_to_level_select,
         )
+
+        if self.game_state.level == 3 and self.level4_tab == 2:
+            self.back_button = Button(
+                pygame.Rect(panel.left + 12, panel.bottom - 2 * button_h - gap - 12, panel.width - 24, button_h),
+                "BACK",
+                font_size=11,
+                on_click=self._back_to_level_select,
+            )
+            self.and_or_button = Button(
+                pygame.Rect(panel.left + 12, panel.bottom - button_h - 12, panel.width - 24, button_h),
+                "AND OR SEARCH",
+                font_size=12,
+                on_click=self._run_and_or_search,
+            )
+        else:
+            if self.game_state.level == 2 or (self.game_state.level == 3 and self.level4_tab != 2):
+                self.randomize_button = Button(
+                    pygame.Rect(panel.left + 12, panel.bottom - 2 * button_h - gap - 12, panel.width - 24, button_h),
+                    "RANDOMIZE",
+                    font_size=11,
+                    on_click=self._toggle_random_demo,
+                )
+            if self.game_state.level == 3:
+                self.belief_button = Button(
+                    pygame.Rect(panel.left + 12, panel.bottom - button_h - 12, panel.width - 24, button_h),
+                    "BELIEF",
+                    font_size=11,
+                    on_click=self._reveal_belief,
+                )
         self.algorithm_buttons = []
         for i, name in enumerate(algorithms):
             col_index = i % columns
@@ -244,6 +427,13 @@ class GameplayScene(BaseScene):
             self.algorithm_buttons.append(Button(rect, name, font_size=11, on_click=lambda n=name: self._select_algorithm(n)))
 
     def _select_algorithm(self, name):
+        if not name:
+            return
+        if self.grid is None:
+            self._reset_algorithm_run(reset_energy=False)
+        if self.grid is None:
+            return
+
         if name == self.algorithm_name:
             self.game_state.suggest_algorithm = None
             if not self.auto_play:
@@ -251,10 +441,28 @@ class GameplayScene(BaseScene):
                 self.step_timer = 0.0
             return
 
+        if name not in ALGORITHM_FACTORIES:
+            self.dialogue.set_status(f"Thuật toán {name} chưa hỗ trợ")
+            return
+
         self.algorithm_name = name
         self.game_state.suggest_algorithm = None
-        self.generator = ALGORITHM_FACTORIES[self.algorithm_name](self.grid, start=(self.player.col, self.player.row), health=self.algorithm_health)
-        self.visited = {self.current}
+        start_pos = self.current if self.current is not None else (self.player.col, self.player.row)
+        try:
+            self.generator = ALGORITHM_FACTORIES[self.algorithm_name](
+                self.grid,
+                start=start_pos,
+                health=self.algorithm_health,
+            )
+        except Exception as exc:
+            self.generator = None
+            self.auto_play = False
+            self.searching = False
+            self.dialogue.set_status(f"Không thể khởi chạy {name}: {exc}")
+            print(f"[Gameplay] failed to start algorithm {name}: {exc}")
+            return
+
+        self.visited = {self.current} if self.current is not None else set()
         self.frontier = set()
         self.final_path = []
         self.neighbor_scores = {}
@@ -264,6 +472,29 @@ class GameplayScene(BaseScene):
         self.finished = False
         self.auto_play = True
         self.step_timer = 0.0
+        self.dialogue.set_status(f"Đang chạy {name}...")
+
+    def _run_and_or_search(self):
+        if self.grid is None:
+            return
+        self.algorithm_name = "AND OR SEARCH"
+        self.game_state.suggest_algorithm = None
+        self.generator = ALGORITHM_FACTORIES[self.algorithm_name](self.grid, start=(self.player.col, self.player.row), health=self.algorithm_health)
+        self.visited = {self.current}
+        self.frontier = set()
+        self.final_path = []
+        self.follow_path = []
+        self.neighbor_scores = {}
+        self.and_or_dark = True
+        self.and_or_branch = set()
+        self.and_or_goal = None
+        self.and_or_path = []
+        self.chosen = None
+        self.temperature = None
+        self.finished = False
+        self.auto_play = True
+        self.step_timer = 0.0
+        self.dialogue.set_text("And-Or search đang chạy...", kit_index=self.game_state.kit_index)
 
     def _handle_player_move(self, key):
         if not self._can_control_player():
@@ -338,19 +569,29 @@ class GameplayScene(BaseScene):
             self._randomize_value_cells(self.grid)
         self.grid_rect, self.cell_size = self._grid_geometry(self.grid.cols, self.grid.rows)
         self.player.place_at_grid(*self.grid.start, self.grid_rect.topleft, self.cell_size)
-        if self.game_state.level != 3:
+        if self.game_state.level not in {2, 3}:
             self.grid.reveal_around(*self.grid.start, radius=1)
         self.visited = {self.grid.start}
         self.frontier = set()
         self.final_path = []
+        self.follow_path = []
         self.current = self.grid.start
         self.neighbor_scores = {}
         self.chosen = None
         self.temperature = None
+        self.depth_limit = None
+        self.restarting = False
         self.algorithm_health = self.game_state.current_health
         self.finished = False
         self.auto_play = False
         self.step_timer = 0.0
+        self.searching = False
+        self.and_or_dark = False
+        self.and_or_branch = set()
+        self.and_or_goal = None
+        self.and_or_path = []
+        self.and_or_choices = set()
+        self.and_or_selected_choice = None
         self.generator = ALGORITHM_FACTORIES[self.algorithm_name](self.grid, start=self.current, health=self.algorithm_health)
 
     def _build_grid(self, level):
@@ -373,15 +614,16 @@ class GameplayScene(BaseScene):
             for pos, cell in grid.cells.items():
                 if pos not in (grid.start, grid.goal):
                     cell.revealed = False
-        else:
+        elif self.level4_tab == 1:
             # Partial observation: để lộ một vài ô, còn lại là ?
             for pos, cell in grid.cells.items():
                 if pos in (grid.start, grid.goal):
                     continue
-                if random.random() < 0.25:
-                    cell.revealed = True
-                else:
-                    cell.revealed = False
+                cell.revealed = random.random() < 0.25
+        else:
+            # Full observation: tất cả ô đều lộ ra ngay từ đầu
+            for cell in grid.cells.values():
+                cell.revealed = True
         grid.set_kind(*grid.start, "start")
         grid.set_kind(*grid.goal, "trophy")
         return grid
@@ -395,50 +637,101 @@ class GameplayScene(BaseScene):
         if not self.dialogue.fully_revealed:
             return
         self.auto_play = False
+        if self.generator is None:
+            return
         self._advance_algorithm()
 
     def _advance_algorithm(self):
-        if self.finished or self.player.is_moving:
+        if self.finished or self.player.is_moving or self.generator is None:
             return
         try:
             step = next(self.generator)
         except StopIteration:
             self._go_gameover("stuck")
             return
-
-        self.current = step.get("current") or self.current
-        self.neighbor_scores = step.get("neighbor_scores", {})
-        self.chosen = step.get("chosen")
-        self.temperature = step.get("temperature")
-
-        if self.algorithm_name in {"Hill Climbing", "Steepest Ascent HC", "Stochastic HC"}:
-            self.frontier = set(self.neighbor_scores.keys())
-            self.visited = set()
-        else:
-            self.frontier = set(step.get("frontier", []))
-            self.visited = set(step.get("visited", self.visited))
-
-        if self.algorithm_name in {"Hill Climbing", "Steepest Ascent HC", "Stochastic HC"}:
-            self._set_hill_climbing_dialogue(step)
-
-        if step.get("stuck"):
-            self._go_gameover("stuck")
+        except Exception as exc:
+            self.generator = None
+            self.auto_play = False
+            self.searching = False
+            self.dialogue.set_status(f"Thuật toán dừng do lỗi: {exc}")
+            print(f"[Gameplay] algorithm step failed: {exc}")
             return
 
-        path = step.get("path")
-        if path is not None:
-            self.final_path = path
-            if path:
-                self._finish_level()
+        try:
+            self.current = step.get("current") or self.current
+            self.neighbor_scores = step.get("neighbor_scores", {})
+            self.chosen = step.get("chosen")
+            self.temperature = step.get("temperature")
+            self.depth_limit = step.get("depth_limit", self.depth_limit)
+            self.restarting = step.get("restarting", False)
+
+            if self.algorithm_name == "AND OR SEARCH":
+                self.and_or_dark = step.get("dark", self.and_or_dark)
+                self.and_or_branch = set(step.get("highlight_branch", self.and_or_branch))
+                self.and_or_goal = step.get("goal", self.and_or_goal)
+                self.and_or_path = list(step.get("or_path", self.and_or_path))
+                self.and_or_choices = set(step.get("branch_choices", self.and_or_choices))
+                self.and_or_selected_choice = step.get("selected_choice", self.and_or_selected_choice)
+            elif self.algorithm_name in {"Hill Climbing", "Steepest Ascent HC", "Stochastic HC"}:
+                self.frontier = set(self.neighbor_scores.keys())
+                self.visited = set()
             else:
-                self._go_gameover("stuck")
-            return
+                self.frontier = set(step.get("frontier", []))
+                self.visited = set(step.get("visited", self.visited))
 
-        move_target = self.chosen or self.current
-        if move_target and move_target != (self.player.col, self.player.row):
-            moved = self._move_player(move_target)
-            if not moved:
+            if self.algorithm_name == "IDS" and self.depth_limit is not None:
+                label = f"IDS depth={self.depth_limit}"
+                if self.restarting:
+                    label += " (restart)"
+                self.dialogue.set_status(label)
+
+            if self.algorithm_name in {"Hill Climbing", "Steepest Ascent HC", "Stochastic HC"}:
+                self._set_hill_climbing_dialogue(step)
+
+            if step.get("stuck"):
                 self._go_gameover("stuck")
+                return
+
+            path = step.get("path")
+            if path is not None:
+                if path:
+                    self.final_path = path
+                    self.searching = False
+                    self.follow_path = list(path)
+                    self.auto_play = False
+                    self.step_timer = 0.0
+                    self.dialogue.set_status("Đã tìm được đường đi. CR7 sẽ di chuyển.")
+                else:
+                    self._go_gameover("stuck")
+                return
+
+            if self.algorithm_name in {"Hill Climbing", "Steepest Ascent HC", "Stochastic HC"}:
+                if self.chosen and self.chosen != (self.player.col, self.player.row):
+                    self.searching = False
+                    self.follow_path = [self.chosen]
+                    self.auto_play = False
+                    self.step_timer = 0.0
+                    self.dialogue.set_status("Đã chọn hành động. CR7 sẽ di chuyển.")
+                    return
+                self.searching = True
+            elif self.algorithm_name == "AND OR SEARCH":
+                if step.get("status") is not None:
+                    self.dialogue.set_status(step.get("status"))
+                else:
+                    self.dialogue.set_status("And-Or search đang tiến hành...")
+                return
+            else:
+                self.searching = True
+
+            self.dialogue.set_status("Đang suy nghĩ...")
+            return
+        except Exception as exc:
+            self.generator = None
+            self.auto_play = False
+            self.searching = False
+            self.dialogue.set_status(f"Xử lý thuật toán bị lỗi: {exc}")
+            print(f"[Gameplay] algorithm processing failed: {exc}")
+            return
 
     def _toggle_random_demo(self):
         if self.grid is None:
@@ -460,9 +753,9 @@ class GameplayScene(BaseScene):
         if self.grid is None:
             return
         for (col, row), cell in self.grid.cells.items():
-            if cell.kind == "wall" or (col, row) in {self.grid.start, self.grid.goal}:
+            if (col, row) in {self.grid.start, self.grid.goal}:
                 continue
-            if cell.value is None:
+            if cell.value is None and cell.kind != "wall":
                 cell.value = random.choice([-4, -2, 0, 2, 4])
                 if cell.value >= 0:
                     cell.kind = "path"
@@ -636,6 +929,10 @@ class GameplayScene(BaseScene):
                 )
                 self._draw_cell(surface, rect, cell)
 
+        if self.level4_tab == 2 and self.algorithm_name != "AND OR SEARCH" and self.current is not None:
+            self._draw_current_overlay(surface, self.current)
+        if self.algorithm_name == "AND OR SEARCH" and self.and_or_selected_choice is not None:
+            self._draw_current_overlay(surface, self.and_or_selected_choice)
         if self.chosen:
             self._draw_choice_arrow(surface, self.chosen)
 
@@ -697,9 +994,25 @@ class GameplayScene(BaseScene):
             draw_text(surface, label, (rect.centerx, rect.centery - 11), size=16,
                       color=C.COL_CREAM_TEXT, align="center")
 
+        if self.algorithm_name == "AND OR SEARCH" and self.and_or_dark:
+            self._overlay(surface, rect, (0, 0, 0, 180))
+        if self.algorithm_name == "AND OR SEARCH" and pos in self.and_or_choices:
+            self._overlay(surface, rect, (250, 220, 140, 180))
+        if self.algorithm_name == "AND OR SEARCH" and pos == self.and_or_selected_choice:
+            self._overlay(surface, rect, (*C.COL_HIGHLIGHT_PURPLE, 220))
+        if self.algorithm_name == "AND OR SEARCH" and pos in self.and_or_branch:
+            self._overlay(surface, rect, (250, 220, 140, 180))
+        if self.algorithm_name == "AND OR SEARCH" and self.and_or_goal == pos:
+            self._overlay(surface, rect, (*C.COL_HIGHLIGHT_PURPLE, 220))
+        if self.algorithm_name == "AND OR SEARCH" and pos in self.and_or_path:
+            self._overlay(surface, rect, (170, 250, 180, 180))
+
         if self.algorithm_name in {"Hill Climbing", "Steepest Ascent HC", "Stochastic HC"}:
             if pos not in self.frontier and pos != self.current and pos != self.chosen and pos not in self.final_path:
                 self._overlay(surface, rect, (0, 0, 0, 150))
+
+        if self.level4_tab == 2 and pos == self.current:
+            self._overlay(surface, rect, (*C.COL_HIGHLIGHT_PURPLE, 180))
 
         if not cell.revealed and self.game_state.level != 3:
             self._overlay(surface, rect, (*C.COL_FOG, 185))
@@ -725,6 +1038,17 @@ class GameplayScene(BaseScene):
         pygame.draw.polygon(surface, (250, 240, 120), points)
         pygame.draw.polygon(surface, (38, 72, 32), points, 3)
 
+    def _draw_current_overlay(self, surface, pos):
+        rect = pygame.Rect(
+            self.grid_rect.left + pos[0] * self.cell_size,
+            self.grid_rect.top + pos[1] * self.cell_size,
+            self.cell_size,
+            self.cell_size,
+        )
+        self._overlay(surface, rect, (*C.COL_HIGHLIGHT_PURPLE, 180))
+        inner = rect.inflate(-8, -8)
+        pygame.draw.rect(surface, C.COL_HIGHLIGHT_PURPLE, inner, 2, border_radius=4)
+
     def _draw_side_panel(self, surface):
         panel = C.SIDE_PANEL_RECT
         draw_wood_panel(surface, panel, border=5, corner=8, fill=(54, 32, 24))
@@ -734,6 +1058,12 @@ class GameplayScene(BaseScene):
             if self.algorithm_name in {"BFS", "DFS", "IDS"}:
                 draw_text(surface, "KHONG CO HEURISTIC", (panel.centerx, panel.top + 34),
                           size=11, color=C.COL_CREAM_TEXT, align="center", shadow=False)
+                if self.algorithm_name == "IDS" and self.depth_limit is not None:
+                    label = f"Depth = {self.depth_limit}"
+                    if self.restarting:
+                        label += " (restart)"
+                    draw_text(surface, label, (panel.centerx, panel.top + 52),
+                              size=11, color=C.COL_CREAM_TEXT, align="center", shadow=False)
             else:
                 draw_text(surface, "HEURISTIC LAN CAN", (panel.centerx, panel.top + 34),
                           size=11, color=C.COL_CREAM_TEXT, align="center", shadow=False)
@@ -810,6 +1140,8 @@ class GameplayScene(BaseScene):
             self.back_button.draw(surface)
         if self.level4_toggle is not None:
             self.level4_toggle.draw(surface)
+        if self.and_or_button is not None:
+            self.and_or_button.draw(surface)
         if self.randomize_button is not None:
             self.randomize_button.draw(surface)
         if self.belief_button is not None:
