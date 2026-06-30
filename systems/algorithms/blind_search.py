@@ -73,7 +73,7 @@ def _resolve_sources(grid, start):
 #                   reached.add(s)
 #                   frontier.add(child)
 # ══════════════════════════════════════════════════════════════════
-def bfs_steps(grid, start=_UNSET, goal=_UNSET):
+def bfs_steps(grid, start=_UNSET, goal=_UNSET, health=None):
     """BFS – đảm bảo tìm đường đi ngắn nhất (số bước) trong lưới không
     trọng số. Dùng FIFO queue (deque).
     
@@ -143,7 +143,7 @@ def bfs_steps(grid, start=_UNSET, goal=_UNSET):
 #               for child in EXPAND(problem, node):
 #                   frontier.push(child)
 # ══════════════════════════════════════════════════════════════════
-def dfs_steps(grid, start=_UNSET, goal=_UNSET):
+def dfs_steps(grid, start=_UNSET, goal=_UNSET, health=None):
     """DFS – dùng LIFO stack, đi sâu một hướng trước. 
     Tương tự BFS nhưng pop từ cuối stack (LIFO) thay vì đầu queue (FIFO).
     
@@ -205,7 +205,7 @@ def dfs_steps(grid, start=_UNSET, goal=_UNSET):
 #               for child in EXPAND(problem, node):
 #                   frontier.push(child)
 # ══════════════════════════════════════════════════════════════════
-def ids_steps(grid, start=_UNSET, goal=_UNSET, max_depth=40):
+def ids_steps(grid, start=_UNSET, goal=_UNSET, max_depth=40, health=None):
     """IDS – kết hợp ưu điểm BFS (optimal) và DFS (ít bộ nhớ).
     Depth limit tăng dần 0, 1, 2, … cho đến khi tìm thấy goal.
     Mỗi vòng lặp depth_limit sẽ RESTART từ đầu để demo từng độ sâu.

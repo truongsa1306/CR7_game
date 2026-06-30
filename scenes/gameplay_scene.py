@@ -25,7 +25,7 @@ from systems.algorithms.hill_climbing import (
 from systems.algorithms.informed_search import astar_steps, greedy_steps, ucs_steps
 from systems.asset_manager import AssetManager, placeholder_trophy
 from systems.audio_manager import AudioManager
-from ui.button import Button
+from ui.button import Button, ToggleGroup
 from ui.dialogue_box import DialogueBox
 from ui.label import draw_text
 from ui.panel import draw_outer_frame, draw_stadium_background, draw_wood_panel
@@ -107,6 +107,8 @@ class GameplayScene(BaseScene):
         self.randomize_button = None
         self.belief_button = None
         self.back_button = None
+        self.level4_toggle = None
+        self.level4_tab = 0
         self.visited = set()
         self.frontier = set()
         self.final_path = []
@@ -126,7 +128,12 @@ class GameplayScene(BaseScene):
         self.player.set_kit(self.game_state.kit_index)
         self.dialogue.set_text(C.LEVEL_INTRO_LINES[self.game_state.level], kit_index=self.game_state.kit_index)
 
-        algorithms = C.LEVEL_ALGORITHMS[self.game_state.level]
+        level_algorithms = C.LEVEL_ALGORITHMS[self.game_state.level]
+        if self.game_state.level == 3:
+            self.level4_tab = 0
+            algorithms = level_algorithms
+        else:
+            algorithms = level_algorithms
         suggested = self.game_state.suggest_algorithm
         self.algorithm_name = suggested if suggested in algorithms else algorithms[0]
         self.game_state.suggest_algorithm = None
@@ -142,6 +149,8 @@ class GameplayScene(BaseScene):
             self.belief_button.handle_event(event)
         if self.back_button is not None:
             self.back_button.handle_event(event)
+        if self.level4_toggle is not None:
+            self.level4_toggle.handle_event(event)
         for button in self.algorithm_buttons:
             button.handle_event(event)
 
@@ -181,33 +190,57 @@ class GameplayScene(BaseScene):
 
     # ------------------------------------------------------------------
     def _create_algorithm_buttons(self):
-        algorithms = C.LEVEL_ALGORITHMS[self.game_state.level]
         panel = C.SIDE_PANEL_RECT
         button_h = 28
         gap = 5
-        total_h = len(algorithms) * button_h + (len(algorithms) - 1) * gap
-        top = panel.bottom - total_h - 12
+        self.level4_toggle = None
+        if self.game_state.level == 3:
+            self.level4_toggle = ToggleGroup(
+                pygame.Rect(panel.left + 12, panel.top + 18, panel.width - 24, button_h),
+                ["4.1 No Obs", "4.2 Partial Obs"],
+                on_select=self._select_level4_tab,
+                font_size=11,
+            )
+            self.level4_toggle.selected = self.level4_tab
+            top = panel.top + 58
+            algorithms = C.LEVEL_ALGORITHMS[3]
+            columns = 2
+            btn_width = int((panel.width - 24 - gap) / columns)
+        else:
+            algorithms = C.LEVEL_ALGORITHMS[self.game_state.level]
+            total_h = len(algorithms) * button_h + (len(algorithms) - 1) * gap
+            top = panel.bottom - total_h - 12
+            columns = 1
+            btn_width = panel.width - 24
+
         self.randomize_button = Button(
-            pygame.Rect(panel.left + 12, top - button_h - gap, panel.width - 24, button_h),
+            pygame.Rect(panel.left + 12, panel.bottom - button_h - 12, panel.width - 24, button_h),
             "RANDOMIZE",
             font_size=11,
             on_click=self._toggle_random_demo,
         )
         self.belief_button = Button(
-            pygame.Rect(panel.left + 12, top - 2 * button_h - 2 * gap, panel.width - 24, button_h),
+            pygame.Rect(panel.left + 12, panel.bottom - 2 * button_h - gap - 12, panel.width - 24, button_h),
             "BELIEF",
             font_size=11,
             on_click=self._reveal_belief,
         )
         self.back_button = Button(
-            pygame.Rect(panel.left + 12, top - 2 * button_h - 2 * gap, panel.width - 24, button_h),
+            pygame.Rect(panel.left + 12, panel.bottom - 3 * button_h - 2 * gap - 12, panel.width - 24, button_h),
             "BACK",
             font_size=11,
             on_click=self._back_to_level_select,
         )
         self.algorithm_buttons = []
         for i, name in enumerate(algorithms):
-            rect = pygame.Rect(panel.left + 12, top + i * (button_h + gap), panel.width - 24, button_h)
+            col_index = i % columns
+            row_index = i // columns
+            rect = pygame.Rect(
+                panel.left + 12 + col_index * (btn_width + gap),
+                top + row_index * (button_h + gap),
+                btn_width,
+                button_h,
+            )
             self.algorithm_buttons.append(Button(rect, name, font_size=11, on_click=lambda n=name: self._select_algorithm(n)))
 
     def _select_algorithm(self, name):
@@ -297,12 +330,16 @@ class GameplayScene(BaseScene):
         if reset_energy:
             self.game_state.restart_level()
         self.game_state.reset_health()
-        self.grid = self._build_grid(self.game_state.level)
+        if self.game_state.level == 3:
+            self.grid = self._build_level4_grid()
+        else:
+            self.grid = self._build_grid(self.game_state.level)
         if self.game_state.level == 2:
             self._randomize_value_cells(self.grid)
         self.grid_rect, self.cell_size = self._grid_geometry(self.grid.cols, self.grid.rows)
         self.player.place_at_grid(*self.grid.start, self.grid_rect.topleft, self.cell_size)
-        self.grid.reveal_around(*self.grid.start, radius=1)
+        if self.game_state.level != 3:
+            self.grid.reveal_around(*self.grid.start, radius=1)
         self.visited = {self.grid.start}
         self.frontier = set()
         self.final_path = []
@@ -324,6 +361,27 @@ class GameplayScene(BaseScene):
             for col, row in layout.get(kind, []):
                 if (col, row) not in (grid.start, grid.goal):
                     grid.set_kind(col, row, kind)
+        grid.set_kind(*grid.start, "start")
+        grid.set_kind(*grid.goal, "trophy")
+        return grid
+
+    def _build_level4_grid(self):
+        grid = self._build_grid(3)
+        self._randomize_value_cells(grid)
+        if self.level4_tab == 0:
+            # No observation: tất cả ô trừ start/goal đều là ?
+            for pos, cell in grid.cells.items():
+                if pos not in (grid.start, grid.goal):
+                    cell.revealed = False
+        else:
+            # Partial observation: để lộ một vài ô, còn lại là ?
+            for pos, cell in grid.cells.items():
+                if pos in (grid.start, grid.goal):
+                    continue
+                if random.random() < 0.25:
+                    cell.revealed = True
+                else:
+                    cell.revealed = False
         grid.set_kind(*grid.start, "start")
         grid.set_kind(*grid.goal, "trophy")
         return grid
@@ -378,7 +436,9 @@ class GameplayScene(BaseScene):
 
         move_target = self.chosen or self.current
         if move_target and move_target != (self.player.col, self.player.row):
-            self._move_player(move_target)
+            moved = self._move_player(move_target)
+            if not moved:
+                self._go_gameover("stuck")
 
     def _toggle_random_demo(self):
         if self.grid is None:
@@ -408,7 +468,7 @@ class GameplayScene(BaseScene):
                     cell.kind = "path"
                 else:
                     cell.kind = "danger" if cell.value >= -2 else "fire"
-        self.grid.reveal_around(*self.grid.start, radius=1)
+            cell.revealed = True
         self.generator = ALGORITHM_FACTORIES[self.algorithm_name](self.grid, start=(self.player.col, self.player.row), health=self.algorithm_health)
         self.visited = {self.current}
         self.frontier = set()
@@ -419,6 +479,13 @@ class GameplayScene(BaseScene):
         self.finished = False
         self.auto_play = False
         self.step_timer = 0.0
+
+    def _select_level4_tab(self, index):
+        self.level4_tab = index
+        if self.algorithm_name not in C.LEVEL_ALGORITHMS[3]:
+            self.algorithm_name = C.LEVEL_ALGORITHMS[3][0]
+        self._create_algorithm_buttons()
+        self._reset_algorithm_run(reset_energy=False)
 
     def _back_to_level_select(self):
         # Preserve current game state but go back to level selection for customization
@@ -489,31 +556,33 @@ class GameplayScene(BaseScene):
 
     def _move_player(self, pos):
         if self.grid is None:
-            return
+            return False
 
         if not self._is_orthogonal_step(pos):
             next_step = self._next_step_towards(pos)
             if next_step is None:
-                return
+                return False
             pos = next_step
 
         cell = self.grid.get(*pos)
         if cell is None or not cell.passable:
-            return
+            return False
         health_delta = self.grid.health_delta(*pos)
         if self.game_state.current_health + health_delta < 0:
-            return
+            return False
         self.player.move_to_grid(pos[0], pos[1], self.grid_rect.topleft, self.cell_size)
         self.current = pos
         self.game_state.current_health += health_delta
         self.algorithm_health = self.game_state.current_health
-        self.grid.reveal_around(*pos, radius=1)
+        if self.game_state.level != 3:
+            self.grid.reveal_around(*pos, radius=1)
         if cell.kind in ("danger", "fire"):
             AudioManager.instance().play_sfx("danger_trigger", volume=0.8)
         else:
             AudioManager.instance().play_sfx("cell_step", volume=0.7)
         if pos == self.grid.goal:
             self._finish_level()
+        return True
 
     def _finish_level(self):
         self.finished = True
@@ -573,16 +642,30 @@ class GameplayScene(BaseScene):
         self.player.draw(surface)
 
     def _draw_cell(self, surface, rect, cell):
+        pos = (cell.col, cell.row)
+        if not cell.revealed and self.game_state.level == 3 and pos not in (self.grid.start, self.grid.goal):
+            pygame.draw.rect(surface, (255, 255, 255), rect)
+            pygame.draw.rect(surface, (0, 0, 0), rect, 1)
+            draw_text(surface, "?", rect.center, size=24, color=(0, 0, 0), align="center")
+            if pos == self.current:
+                pygame.draw.rect(surface, C.COL_GOLD_BRIGHT, rect.inflate(-4, -4), 2)
+            return
+
         pygame.draw.rect(surface, self._cell_color(cell.kind, cell.value), rect)
         pygame.draw.rect(surface, (48, 72, 42), rect, 1)
 
-        pos = (cell.col, cell.row)
         if pos in self.frontier and self.algorithm_name in {"Hill Climbing", "Steepest Ascent HC", "Stochastic HC"}:
             self._overlay(surface, rect, (*C.COL_FRONTIER, 100))
         elif pos in self.visited:
             self._overlay(surface, rect, (*C.COL_VISITED, 75))
         if pos in self.final_path:
             self._overlay(surface, rect, (*C.COL_PATH_FINAL, 120))
+
+        if cell.kind not in ("start", "trophy", "wall"):
+            label = str(cell.cost)
+            text_color = C.COL_BLACK if cell.kind == "path" and cell.value is None else C.COL_CREAM_TEXT
+            draw_text(surface, label, (rect.centerx, rect.centery - 11), size=18,
+                      color=text_color, align="center")
 
         highlighted_pos = (self.player.col, self.player.row)
         if pos == highlighted_pos:
@@ -602,7 +685,10 @@ class GameplayScene(BaseScene):
             )
             surface.blit(trophy, trophy.get_rect(center=rect.center))
 
-        if self.algorithm_name in {"BFS", "DFS", "IDS"}:
+        if not cell.revealed and self.game_state.level == 3:
+            if pos not in (self.grid.start, self.grid.goal):
+                draw_text(surface, "?", rect.center, size=24, color=C.COL_CREAM_TEXT, align="center")
+        elif self.algorithm_name in {"BFS", "DFS", "IDS"}:
             if cell.kind not in ("start", "trophy", "wall"):
                 draw_text(surface, "0", (rect.centerx, rect.centery - 11), size=16,
                           color=C.COL_CREAM_TEXT, align="center")
@@ -615,7 +701,7 @@ class GameplayScene(BaseScene):
             if pos not in self.frontier and pos != self.current and pos != self.chosen and pos not in self.final_path:
                 self._overlay(surface, rect, (0, 0, 0, 150))
 
-        if not cell.revealed:
+        if not cell.revealed and self.game_state.level != 3:
             self._overlay(surface, rect, (*C.COL_FOG, 185))
 
     def _draw_choice_arrow(self, surface, pos):
@@ -680,10 +766,34 @@ class GameplayScene(BaseScene):
                       size=14, color=C.COL_CREAM_TEXT, align="center")
             draw_text(surface, f"({self.algorithm_name})", (panel.centerx, panel.top + 38),
                       size=12, color=C.COL_GOLD_BRIGHT, align="center", shadow=False)
-            draw_text(surface, "Trang thai:", (panel.centerx, panel.top + 92),
+            if self.algorithm_name in {"BFS", "DFS", "IDS"}:
+                draw_text(surface, "Blind search khong co heuristic.",
+                          (panel.centerx, panel.top + 62), size=11,
+                          color=C.COL_CREAM_TEXT, align="center", shadow=False)
+            elif self.algorithm_name in {"UCS", "Greedy", "A*"}:
+                draw_text(surface, "Heuristic / g/h/f se hien khi chay.",
+                          (panel.centerx, panel.top + 62), size=11,
+                          color=C.COL_CREAM_TEXT, align="center", shadow=False)
+                if self.current and self.grid is not None:
+                    current_cell = self.grid.get(*self.current)
+                    if current_cell is not None:
+                        draw_text(surface, f"g(n): {getattr(current_cell, 'g', 0):.0f}",
+                                  (panel.left + 22, panel.top + 82), size=12,
+                                  color=C.COL_CREAM_TEXT)
+                        draw_text(surface, f"h(n): {getattr(current_cell, 'h', 0):.0f}",
+                                  (panel.left + 112, panel.top + 82), size=12,
+                                  color=C.COL_CREAM_TEXT)
+                        draw_text(surface, f"f(n): {getattr(current_cell, 'f', 0):.0f}",
+                                  (panel.left + 202, panel.top + 82), size=12,
+                                  color=C.COL_GOLD_BRIGHT)
+            elif self.algorithm_name in {"Hill Climbing", "Steepest Ascent HC", "Stochastic HC"}:
+                draw_text(surface, "Hill climbing dung heuristic local search.",
+                          (panel.centerx, panel.top + 62), size=11,
+                          color=C.COL_CREAM_TEXT, align="center", shadow=False)
+            draw_text(surface, "Trang thai:", (panel.centerx, panel.top + 110),
                       size=14, color=C.COL_CREAM_TEXT, align="center")
             status = "Tu dong" if self.auto_play else "Tung buoc"
-            draw_text(surface, status, (panel.centerx, panel.top + 116),
+            draw_text(surface, status, (panel.centerx, panel.top + 134),
                       size=15, color=C.COL_GOLD_BRIGHT, align="center")
 
         health_ratio = max(0.0, min(1.0, self.game_state.current_health / max(1, self.game_state.max_health)))
@@ -698,6 +808,8 @@ class GameplayScene(BaseScene):
 
         if self.back_button is not None:
             self.back_button.draw(surface)
+        if self.level4_toggle is not None:
+            self.level4_toggle.draw(surface)
         if self.randomize_button is not None:
             self.randomize_button.draw(surface)
         if self.belief_button is not None:

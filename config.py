@@ -64,10 +64,10 @@ GRID_CELL_SIZE = 64
 TYPEWRITER_CPS = 40  # characters per second
 
 # UI Rectangles (pygame.Rect format: (x, y, width, height))
-DIALOG_PANEL_RECT = pygame.Rect(30, 400, 964, 150)
-PORTRAIT_RECT = pygame.Rect(40, 410, 100, 140)
-TEXT_AREA_RECT = pygame.Rect(150, 410, 820, 130)
-SKIP_BUTTON_RECT = pygame.Rect(900, 420, 80, 30)
+DIALOG_PANEL_RECT = pygame.Rect(30, 480, 964, 96)
+PORTRAIT_RECT = pygame.Rect(40, 470, 100, 120)
+TEXT_AREA_RECT = pygame.Rect(150, 482, 820, 78)
+SKIP_BUTTON_RECT = pygame.Rect(900, 490, 80, 26)
 CURRENCY_ICON_RECT = pygame.Rect(50, 30, 24, 24)
 LOGO_RECT = pygame.Rect(450, 80, 124, 60)
 
@@ -99,7 +99,7 @@ LEVEL_ALGORITHMS = [
     [ALGO_BFS, ALGO_DFS, ALGO_IDS],  # Level 0: Blind Search variants
     [ALGO_UCS, ALGO_GREEDY, ALGO_ASTAR],  # Level 1: Informed Search variants
     ["Hill Climbing", "Steepest Ascent HC", "Stochastic HC"],  # Level 2: Hill Climbing variants
-    [ALGO_BFS, ALGO_DFS, ALGO_UCS, ALGO_GREEDY, ALGO_ASTAR, "Hill Climbing"],  # Level 3: uncertainty demo
+    [ALGO_BFS, ALGO_UCS, ALGO_GREEDY, ALGO_ASTAR, "Hill Climbing", "Steepest Ascent HC", "Stochastic HC"],  # Level 4: uncertainty demo tabs
 ]
 LEVEL_GRID_SIZE = [(9, 5), (9, 5), (12, 7), (12, 7)]
 LEVEL_TITLES = {
