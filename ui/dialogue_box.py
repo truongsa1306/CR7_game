@@ -20,6 +20,7 @@ class DialogueBox:
         self.text = ""
         self.shown_chars = 0.0
         self.kit_index = 0
+        self.status_text = ""
         self.skip_btn = Button(C.SKIP_BUTTON_RECT, "SKIP", font_size=14,
                                 on_click=self._handle_skip)
         self.on_skip = on_skip
@@ -29,14 +30,21 @@ class DialogueBox:
         self.text = text
         self.shown_chars = 0.0
         self.kit_index = kit_index
+        self.status_text = ""
+
+    def set_status(self, status):
+        self.status_text = status or ""
 
     def _handle_skip(self):
         # Skip finishes the typewriter instantly on first press,
         # advances the scene on second press.
         if self.shown_chars < len(self.text):
             self.shown_chars = len(self.text)
-        elif self.on_skip:
-            self.on_skip()
+        elif callable(self.on_skip):
+            try:
+                self.on_skip()
+            except Exception as exc:
+                print(f"Skip handler failed: {exc}")
 
     @property
     def fully_revealed(self):
@@ -70,6 +78,11 @@ class DialogueBox:
         visible = self.text[: int(self.shown_chars)]
         draw_text(surface, visible, C.TEXT_AREA_RECT.topleft, size=16,
                   color=C.COL_CREAM_TEXT, max_width=C.TEXT_AREA_RECT.width)
+
+        if self.status_text:
+            status_pos = (C.TEXT_AREA_RECT.left, C.TEXT_AREA_RECT.bottom - 18)
+            draw_text(surface, self.status_text, status_pos, size=14,
+                      color=C.COL_HIGHLIGHT_PURPLE, align="left", max_width=C.TEXT_AREA_RECT.width)
 
         # Currency / gem icon (simple pulsing emerald placeholder)
         import math

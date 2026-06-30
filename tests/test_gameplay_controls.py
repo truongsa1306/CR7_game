@@ -23,6 +23,15 @@ class GameplayControlsTests(unittest.TestCase):
         scene._select_algorithm('DFS')
         self.assertIsNone(game_state.suggest_algorithm)
 
+    def test_select_algorithm_handles_uninitialized_grid_without_crashing(self):
+        manager = type('Manager', (), {'change': lambda self, state: None})()
+        game_state = GameState()
+        scene = GameplayScene(manager, game_state)
+        scene._select_algorithm('UCS')
+        self.assertEqual(scene.algorithm_name, 'UCS')
+        self.assertTrue(scene.auto_play)
+        self.assertIsNotNone(scene.generator)
+
     def test_next_step_towards_returns_orthogonal_neighbor(self):
         manager = type('Manager', (), {'change': lambda self, state: None})()
         game_state = GameState()

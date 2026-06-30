@@ -31,9 +31,14 @@ class Button:
         elif event.type == pygame.MOUSEBUTTONUP and event.button == 1:
             if self.pressed and self.rect.collidepoint(event.pos):
                 AudioManager.instance().play_sfx("button_click")
-                if self.on_click:
-                    self.on_click()
                 self.pressed = False
+                try:
+                    if self.on_click:
+                        self.on_click()
+                except Exception as exc:
+                    import traceback
+                    print(f"[Button] click failed for '{self.text}': {exc}")
+                    traceback.print_exc()
                 return True
             self.pressed = False
         return False

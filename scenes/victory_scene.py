@@ -12,6 +12,7 @@ import config as C
 from effects.particles import ParticleSystem
 from scenes.cutscene_base import CutsceneScene
 from systems.audio_manager import AudioManager
+from ui.button import Button
 from ui.panel import draw_outer_frame, draw_stadium_background
 
 
@@ -21,6 +22,8 @@ class VictoryScene(CutsceneScene):
         self.particles = ParticleSystem()
         self.elapsed = 0.0
         self._rng = random.Random(77)
+        self.back_button = Button(pygame.Rect(20, 20, 80, 28), "BACK", font_size=12,
+                                  on_click=self._go_to_level_select)
 
     def on_enter(self, **kwargs):
         self.elapsed = 0.0
@@ -57,7 +60,15 @@ class VictoryScene(CutsceneScene):
         self._draw_badge(surface, self.badge_lines)
         self._draw_graph(surface, *self.graph)
         self.dialogue.draw(surface)
+        self.back_button.draw(surface)
         draw_outer_frame(surface)
+
+    def handle_event(self, event):
+        super().handle_event(event)
+        self.back_button.handle_event(event)
+
+    def _go_to_level_select(self):
+        self.manager.change(C.STATE_LEVEL_SELECT)
 
     def handle_event(self, event):
         super().handle_event(event)
