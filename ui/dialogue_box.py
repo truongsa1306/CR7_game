@@ -68,7 +68,7 @@ class DialogueBox:
 
         # Typewriter text
         visible = self.text[: int(self.shown_chars)]
-        draw_text(surface, visible, C.TEXT_AREA_RECT.topleft, size=18,
+        draw_text(surface, visible, C.TEXT_AREA_RECT.topleft, size=16,
                   color=C.COL_CREAM_TEXT, max_width=C.TEXT_AREA_RECT.width)
 
         # Currency / gem icon (simple pulsing emerald placeholder)

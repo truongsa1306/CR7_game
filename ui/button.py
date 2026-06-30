@@ -88,12 +88,14 @@ class ToggleGroup:
 
     def draw(self, surface):
         for i, btn in enumerate(self.buttons):
-            btn.hovered = btn.hovered or (i == self.selected)
-            border = C.COL_GOLD if i == self.selected else C.COL_WOOD_DARK
-            base = (96, 62, 36) if i == self.selected else (74, 46, 30)
+            is_selected = i == self.selected
+            btn.hovered = btn.hovered or is_selected
+            border = C.COL_GOLD if is_selected else C.COL_WOOD_DARK
+            base = (120, 80, 40) if is_selected else (74, 46, 30)
+            text_color = C.COL_GOLD_BRIGHT if is_selected else C.COL_CREAM_TEXT
             pygame.draw.rect(surface, base, btn.rect, border_radius=6)
             pygame.draw.rect(surface, border, btn.rect, 2, border_radius=6)
             tw, th = text_size(btn.text, btn.font_size)
             draw_text(surface, btn.text,
                       (btn.rect.centerx, btn.rect.centery - th // 2),
-                      size=btn.font_size, color=C.COL_CREAM_TEXT, align="center", shadow=False)
+                      size=btn.font_size, color=text_color, align="center", shadow=False)

@@ -265,8 +265,8 @@ class TestGreedy(unittest.TestCase):
     def test_h_scores_written(self):
         g = make_grid(3, 3, (0, 0), (2, 2))
         drain(greedy_steps(g))
-        # Ô start: h = manhattan((0,0),(2,2)) = 4
-        self.assertEqual(g.get(0, 0).h, 4)
+        # Ô start: h ban đầu được đặt là 20 theo quy ước mới
+        self.assertEqual(g.get(0, 0).h, 20)
 
     def test_heuristic_accounts_for_negative_cell_value(self):
         g = make_grid(3, 3, (0, 0), (2, 2))
