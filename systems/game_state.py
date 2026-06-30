@@ -13,6 +13,8 @@ class GameState:
     def __init__(self):
         self.level = 0
         self.kit_index = 0
+        self.max_health = 100
+        self.current_health = self.max_health
         self.gameover_reason = "stuck"   # "stuck" only, energy-based death removed
         self.suggest_algorithm = None      # e.g. "Stochastic HC" after a local-maxima death
 
@@ -20,5 +22,8 @@ class GameState:
         self.level = min(self.level + 1, max(C.LEVEL_NAMES.keys()))
         self.kit_index = self.level
 
+    def reset_health(self):
+        self.current_health = self.max_health
+
     def restart_level(self):
-        pass
+        self.reset_health()

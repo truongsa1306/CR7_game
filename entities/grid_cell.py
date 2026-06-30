@@ -88,18 +88,30 @@ class GridModel:
         return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
     def heuristic_value(self, col, row):
-        """Used by Hill Climbing levels: lower is better.
+        """Used by hill-climbing and informed-search levels: lower is better.
 
-        h(n) = cell value + Manhattan distance to goal.
-        Nếu cell.value không tồn tại thì hazard penalty vẫn được giữ.
+        h(n) = Manhattan distance to the goal, adjusted by the cell's value.
+        Negative cells make the heuristic larger, so the search tends to avoid
+        them unless the path is otherwise necessary.
         """
-        cell = self.cells[(col, row)]
         if self.goal is None:
-            if cell.value is not None:
-                return cell.value
-            return 10 - {"fire": 8, "danger": 3}.get(cell.kind, 0)
+            return 0
+        distance = self.manhattan((col, row), self.goal)
+        return distance - self.health_delta(col, row)
 
-        dist = self.manhattan((col, row), self.goal)
-        base_value = cell.value if cell.value is not None else 0
-        hazard_penalty = 0 if cell.value is not None else {"fire": 8, "danger": 3}.get(cell.kind, 0)
-        return base_value + dist - hazard_penalty
+    def health_delta(self, col, row):
+        """Return the health change for entering a cell."""
+        cell = self.cells[(col, row)]
+        if cell is None:
+            return 0
+        if cell.value is not None:
+            return cell.value
+        if cell.kind == "fire":
+            return -5
+        if cell.kind == "danger":
+            return -2
+        return 0
+
+    def can_afford(self, health, col, row):
+        """True when the player can enter this cell without dying."""
+        return health + self.health_delta(col, row) >= 0

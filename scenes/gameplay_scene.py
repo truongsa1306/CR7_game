@@ -31,6 +31,12 @@ from ui.label import draw_text
 from ui.panel import draw_outer_frame, draw_stadium_background, draw_wood_panel
 
 
+def _factory_with_health(fn, *args, **kwargs):
+    def _wrapped(grid, start=None, health=None):
+        return fn(grid, start=start, health=health, *args, **kwargs)
+    return _wrapped
+
+
 ALGORITHM_FACTORIES = {
     "BFS": bfs_steps,
     "DFS": dfs_steps,
@@ -40,8 +46,8 @@ ALGORITHM_FACTORIES = {
     "A*": astar_steps,
     "Hill Climbing": simple_hill_climbing_steps,
     "Steepest Ascent HC": steepest_ascent_hill_climbing_steps,
-    "Stochastic HC": lambda grid, start=None: stochastic_hill_climbing_steps(grid, start=start, rng=random.Random(17)),
-    "Simulated Annealing": lambda grid, start=None: simulated_annealing_steps(grid, start=start, rng=random.Random(23)),
+    "Stochastic HC": _factory_with_health(stochastic_hill_climbing_steps, rng=random.Random(17)),
+    "Simulated Annealing": _factory_with_health(simulated_annealing_steps, rng=random.Random(23)),
 }
 
 
@@ -107,6 +113,7 @@ class GameplayScene(BaseScene):
         self.neighbor_scores = {}
         self.chosen = None
         self.temperature = None
+        self.algorithm_health = 100
         self.auto_play = True
         self.step_timer = 0.0
         self.finished = False
@@ -204,13 +211,14 @@ class GameplayScene(BaseScene):
 
         self.algorithm_name = name
         self.game_state.suggest_algorithm = None
-        self.generator = ALGORITHM_FACTORIES[self.algorithm_name](self.grid, start=(self.player.col, self.player.row))
+        self.generator = ALGORITHM_FACTORIES[self.algorithm_name](self.grid, start=(self.player.col, self.player.row), health=self.algorithm_health)
         self.visited = {self.current}
         self.frontier = set()
         self.final_path = []
         self.neighbor_scores = {}
         self.chosen = None
         self.temperature = None
+        self.algorithm_health = self.game_state.current_health
         self.finished = False
         self.auto_play = True
         self.step_timer = 0.0
@@ -279,6 +287,7 @@ class GameplayScene(BaseScene):
     def _reset_algorithm_run(self, reset_energy=True):
         if reset_energy:
             self.game_state.restart_level()
+        self.game_state.reset_health()
         self.grid = self._build_grid(self.game_state.level)
         if self.game_state.level == 2:
             self._randomize_value_cells(self.grid)
@@ -292,10 +301,11 @@ class GameplayScene(BaseScene):
         self.neighbor_scores = {}
         self.chosen = None
         self.temperature = None
+        self.algorithm_health = self.game_state.current_health
         self.finished = False
         self.auto_play = False
         self.step_timer = 0.0
-        self.generator = ALGORITHM_FACTORIES[self.algorithm_name](self.grid, start=self.current)
+        self.generator = ALGORITHM_FACTORIES[self.algorithm_name](self.grid, start=self.current, health=self.algorithm_health)
 
     def _build_grid(self, level):
         cols, rows = C.LEVEL_GRID_SIZE[level]
@@ -366,7 +376,7 @@ class GameplayScene(BaseScene):
             return
         self._randomize_value_cells(self.grid)
         self.grid.reveal_around(*self.grid.start, radius=1)
-        self.generator = ALGORITHM_FACTORIES[self.algorithm_name](self.grid, start=(self.player.col, self.player.row))
+        self.generator = ALGORITHM_FACTORIES[self.algorithm_name](self.grid, start=(self.player.col, self.player.row), health=self.algorithm_health)
         self.visited = {self.current}
         self.frontier = set()
         self.final_path = []
@@ -390,15 +400,15 @@ class GameplayScene(BaseScene):
             if (col, row) == grid.goal:
                 continue
             dist = grid.manhattan((col, row), grid.goal)
-            value_candidates = [-10, -8, -6, -4, -2, 0, 2, 4, 6, 8, 10]
+            value_candidates = [-6, -4, -2, 0, 2, 4]
             weights = []
             for value in value_candidates:
                 if value < 0:
-                    weights.append(10 + max(0, max_dist - dist))
+                    weights.append(12 + max(0, max_dist - dist) + abs(value))
                 elif value == 0:
-                    weights.append(12)
+                    weights.append(8)
                 else:
-                    weights.append(10 + dist)
+                    weights.append(5 + dist // 2)
             value = random.choices(population=value_candidates, weights=weights, k=1)[0]
             cell.value = value
             if value >= 6:
@@ -457,8 +467,13 @@ class GameplayScene(BaseScene):
         cell = self.grid.get(*pos)
         if cell is None or not cell.passable:
             return
+        health_delta = self.grid.health_delta(*pos)
+        if self.game_state.current_health + health_delta < 0:
+            return
         self.player.move_to_grid(pos[0], pos[1], self.grid_rect.topleft, self.cell_size)
         self.current = pos
+        self.game_state.current_health += health_delta
+        self.algorithm_health = self.game_state.current_health
         self.grid.reveal_around(*pos, radius=1)
         if cell.kind in ("danger", "fire"):
             AudioManager.instance().play_sfx("danger_trigger", volume=0.8)
@@ -638,6 +653,13 @@ class GameplayScene(BaseScene):
             draw_text(surface, status, (panel.centerx, panel.top + 116),
                       size=15, color=C.COL_GOLD_BRIGHT, align="center")
 
+        health_ratio = max(0.0, min(1.0, self.game_state.current_health / max(1, self.game_state.max_health)))
+        bar_rect = pygame.Rect(24, 20, 180, 16)
+        pygame.draw.rect(surface, (70, 30, 20), bar_rect)
+        fill_width = int(bar_rect.width * health_ratio)
+        pygame.draw.rect(surface, (90, 180, 95) if health_ratio > 0.5 else (220, 120, 70), pygame.Rect(bar_rect.left, bar_rect.top, fill_width, bar_rect.height))
+        pygame.draw.rect(surface, C.COL_GOLD_BRIGHT, bar_rect, 2)
+        draw_text(surface, f"Máu: {self.game_state.current_health}/{self.game_state.max_health}", (bar_rect.centerx, bar_rect.top - 10), size=11, color=C.COL_CREAM_TEXT, align="center")
         draw_text(surface, "Mui ten: dieu khien", (panel.centerx, panel.bottom - 32),
                   size=12, color=C.COL_CREAM_TEXT, align="center")
 
@@ -654,13 +676,13 @@ class GameplayScene(BaseScene):
 
     def _cell_color(self, kind, value=None):
         if value is not None:
-            if value < 0:
-                return C.COL_GRASS_LIGHT
+            if value > 0:
+                return (110, 180, 110)
             if value == 0:
                 return C.COL_PATH_GREY
-            if value <= 4:
-                return C.COL_SILVER
-            return C.COL_DANGER_RED
+            if value <= -4:
+                return C.COL_DANGER_RED
+            return C.COL_SILVER
         return {
             "grass": C.COL_GRASS_LIGHT,
             "path": C.COL_PATH_GREY,

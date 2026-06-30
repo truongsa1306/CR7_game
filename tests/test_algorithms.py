@@ -268,6 +268,17 @@ class TestGreedy(unittest.TestCase):
         # Ô start: h = manhattan((0,0),(2,2)) = 4
         self.assertEqual(g.get(0, 0).h, 4)
 
+    def test_heuristic_accounts_for_negative_cell_value(self):
+        g = make_grid(3, 3, (0, 0), (2, 2))
+        g.get(1, 0).value = -3
+        self.assertEqual(g.heuristic_value(1, 0), 6)
+
+    def test_health_gate_blocks_unaffordable_nodes(self):
+        g = make_grid(3, 3, (0, 0), (2, 2))
+        g.get(1, 0).value = -5
+        step = next(greedy_steps(g, health=2))
+        self.assertNotIn((1, 0), step["frontier"])
+
 
 # ══════════════════════════════════════════════════════════════════
 # A*
@@ -319,6 +330,11 @@ class TestSimpleHC(unittest.TestCase):
         self.assertIsInstance(step["neighbor_scores"], dict)
         self.assertGreater(len(step["neighbor_scores"]), 0)
 
+    def test_simple_hill_climbing_inspects_one_neighbor_at_a_time(self):
+        g = make_grid(3, 3, (0, 0), (2, 2))
+        step = next(simple_hill_climbing_steps(g))
+        self.assertEqual(len(step["neighbor_scores"]), 1)
+
     def test_chosen_improves_or_none(self):
         g = make_grid(5, 5, (0, 0), (4, 4))
         gen = simple_hill_climbing_steps(g)
@@ -330,13 +346,13 @@ class TestSimpleHC(unittest.TestCase):
                 break
             chosen = step["chosen"]
             if chosen is not None:
-                self.assertGreater(
+                self.assertLess(
                     g.heuristic_value(*chosen),
                     g.heuristic_value(*prev_pos),
-                    msg="Simple HC phải chọn ô có heuristic cao hơn hiện tại",
+                    msg="Simple HC phải chọn ô có heuristic thấp hơn hiện tại",
                 )
                 prev_pos = chosen
-            else:
+            elif step.get("stuck"):
                 self.assertTrue(step["stuck"])
 
     def test_stops_at_local_max(self):
@@ -369,6 +385,12 @@ class TestSimpleHC(unittest.TestCase):
         # Vị trí start phải là ô passable
         c, r = step["current"]
         self.assertTrue(g.get(c, r).passable)
+
+    def test_health_gate_blocks_cells_that_would_kill_player(self):
+        g = make_grid(3, 3, (0, 0), (2, 2))
+        g.get(1, 0).value = -5
+        step = next(simple_hill_climbing_steps(g, health=2))
+        self.assertNotIn((1, 0), step["neighbor_scores"])
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -412,7 +434,7 @@ class TestStochasticHC(unittest.TestCase):
         if step["chosen"] is not None:
             current_score = g.heuristic_value(0, 0)
             chosen_score  = g.heuristic_value(*step["chosen"])
-            self.assertGreater(chosen_score, current_score,
+            self.assertLess(chosen_score, current_score,
                                "Stochastic HC chỉ chọn trong tập uphill")
 
     def test_randomness_produces_different_paths(self):

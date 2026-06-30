@@ -72,7 +72,9 @@ def _resolve_sources(grid, start):
 def _heuristic(grid, pos, goal):
     """Heuristic used by Greedy and A*.
 
-    h(n) = cell value + Manhattan distance to goal.
+    h(n) = Manhattan distance to the goal adjusted by the current cell's
+    value/penalty. Negative cells make the estimate larger, so the search
+    avoids them unless they are necessary to reach the goal.
     Bằng 0 nếu goal=None.
     """
     if goal is None:
@@ -80,8 +82,7 @@ def _heuristic(grid, pos, goal):
     cell = grid.get(*pos)
     if cell is None:
         return 0
-    value = cell.value if cell.value is not None else 0
-    return value + grid.manhattan(pos, goal)
+    return grid.heuristic_value(*pos)
 
 
 def _step_cost(cell):
@@ -91,7 +92,7 @@ def _step_cost(cell):
 
 # ─── Driver chung ─────────────────────────────────────────────────
 
-def _best_first_search(grid, priority_fn, start, goal):
+def _best_first_search(grid, priority_fn, start, goal, health=None):
     """
     Driver dùng chung cho UCS / Greedy / A*.
     priority_fn(grid, pos, g_cost, goal) → số thực (ưu tiên nhỏ hơn = tốt hơn).
@@ -105,7 +106,9 @@ def _best_first_search(grid, priority_fn, start, goal):
     """
     sources = _resolve_sources(grid, start)
     counter = 0                         # tie-breaker cho heapq
-    g_score = {s: 0 for s in sources}  # chi phí thực tốt nhất đến mỗi node
+    reached = {
+        s: {"g": 0, "health": health} for s in sources
+    } if health is not None else {s: {"g": 0, "health": None} for s in sources}
     parent  = {}
     visited = set()                     # đã pop và mở rộng
 
@@ -139,17 +142,24 @@ def _best_first_search(grid, priority_fn, start, goal):
         # Mở rộng node
         for cell in grid.neighbors(*current):
             pos        = (cell.col, cell.row)
-            new_g      = g_score[current] + _step_cost(cell)
-            old_g      = g_score.get(pos, float("inf"))
-
-            if new_g < old_g:           # đường tốt hơn đến pos
-                g_score[pos]  = new_g
-                parent[pos]   = current
-                h             = _heuristic(grid, pos, goal)
-                cell.g, cell.h, cell.f = new_g, h, new_g + h
-                priority      = priority_fn(grid, pos, new_g, goal)
-                counter      += 1
-                heapq.heappush(frontier, (priority, counter, pos))
+            current_entry = reached[current]
+            new_g      = current_entry["g"] + _step_cost(cell)
+            old_entry  = reached.get(pos)
+            if old_entry is not None and new_g >= old_entry["g"]:
+                continue
+            if health is not None:
+                new_health = current_entry["health"] + grid.health_delta(*pos)
+                if new_health < 0:
+                    continue
+            else:
+                new_health = None
+            reached[pos] = {"g": new_g, "health": new_health}
+            parent[pos]   = current
+            h             = _heuristic(grid, pos, goal)
+            cell.g, cell.h, cell.f = new_g, h, new_g + h
+            priority      = priority_fn(grid, pos, new_g, goal)
+            counter      += 1
+            heapq.heappush(frontier, (priority, counter, pos))
 
         yield {"current": current,
                "frontier": [f[2] for f in frontier],
@@ -162,7 +172,7 @@ def _best_first_search(grid, priority_fn, start, goal):
 
 # ─── Public API ───────────────────────────────────────────────────
 
-def ucs_steps(grid, start=_UNSET, goal=_UNSET):
+def ucs_steps(grid, start=_UNSET, goal=_UNSET, health=None):
     """Uniform Cost Search – f(n) = g(n).
     Đảm bảo tìm đường đi có tổng chi phí nhỏ nhất.
     """
@@ -173,10 +183,11 @@ def ucs_steps(grid, start=_UNSET, goal=_UNSET):
         priority_fn=lambda g, pos, cost, gl: cost,
         start=start,
         goal=goal,
+        health=health,
     )
 
 
-def greedy_steps(grid, start=_UNSET, goal=_UNSET):
+def greedy_steps(grid, start=_UNSET, goal=_UNSET, health=None):
     """Greedy Best-First Search – f(n) = h(n).
     Luôn ưu tiên node trông có vẻ gần goal nhất; nhanh nhưng không
     đảm bảo optimal. Khi goal=None, h=0 nên hoạt động như duyệt FIFO heap.
@@ -188,10 +199,11 @@ def greedy_steps(grid, start=_UNSET, goal=_UNSET):
         priority_fn=lambda g, pos, cost, gl: _heuristic(g, pos, gl),
         start=start,
         goal=goal,
+        health=health,
     )
 
 
-def astar_steps(grid, start=_UNSET, goal=_UNSET):
+def astar_steps(grid, start=_UNSET, goal=_UNSET, health=None):
     """A* Search – f(n) = g(n) + h(n).
     Kết hợp chi phí thực và ước tính; optimal nếu h admissible.
     Khi goal=None → h=0 → A* degenerates thành UCS (đúng lý thuyết).
@@ -203,4 +215,5 @@ def astar_steps(grid, start=_UNSET, goal=_UNSET):
         priority_fn=lambda g, pos, cost, gl: cost + _heuristic(g, pos, gl),
         start=start,
         goal=goal,
+        health=health,
     )
