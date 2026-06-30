@@ -70,11 +70,11 @@ def _resolve_start(grid, start, rng=None):
 
 # ══════════════════════════════════════════════════════════════════
 # SIMPLE HILL CLIMBING
-# Xét lần lượt láng giềng, chọn ngay ô ĐẦU TIÊN tốt hơn hiện tại.
+# Xét lần lượt láng giềng, chọn ngay ô ĐẦU TIÊN có chi phí nhỏ hơn hiện tại.
 # ══════════════════════════════════════════════════════════════════
 def simple_hill_climbing_steps(grid, start=_UNSET, rng=None):
     """Simple Hill Climbing – "first-choice".
-    Dừng (stuck=True) khi không có láng giềng nào tốt hơn hiện tại.
+    Dừng (stuck=True) khi không có ô láng giềng nào có chi phí thấp hơn hiện tại.
     Không có goal test bên trong (đúng với mã giả local search).
     """
     start = grid.start if start is _UNSET else start
@@ -103,7 +103,7 @@ def simple_hill_climbing_steps(grid, start=_UNSET, rng=None):
                 "path":             None,
                 "temperature":      None,
             }
-            if chosen is None and score > current_score:
+            if chosen is None and score < current_score:
                 chosen = pos
                 break
 
@@ -125,12 +125,12 @@ def simple_hill_climbing_steps(grid, start=_UNSET, rng=None):
 
 # ══════════════════════════════════════════════════════════════════
 # STEEPEST-ASCENT HILL CLIMBING
-# Xét TẤT CẢ láng giềng, chọn ô TỐT NHẤT.
+# Xét TẤT CẢ láng giềng, chọn ô có chi phí nhỏ nhất.
 # ══════════════════════════════════════════════════════════════════
 def steepest_ascent_hill_climbing_steps(grid, start=_UNSET, rng=None):
     """Steepest-Ascent Hill Climbing – "best-improvement".
-    So sánh tất cả láng giềng, chọn ô có heuristic cao nhất.
-    Nếu không có láng giềng nào tốt hơn → stuck.
+    So sánh tất cả láng giềng, chọn ô có chi phí thấp nhất.
+    Nếu không có láng giềng nào thấp hơn hiện tại → stuck.
     """
     start = grid.start if start is _UNSET else start
     current = _resolve_start(grid, start, rng)
@@ -138,7 +138,7 @@ def steepest_ascent_hill_climbing_steps(grid, start=_UNSET, rng=None):
     while True:
         current_score          = grid.heuristic_value(*current)
         scores                 = {}
-        best_pos, best_score   = None, current_score  # ngưỡng tối thiểu = current
+        best_pos, best_score   = None, current_score  # ngưỡng tối đa = current
 
         for dc, dr in ORTHOGONAL_DIRECTIONS:
             nc, nr = current[0] + dc, current[1] + dr
@@ -150,7 +150,7 @@ def steepest_ascent_hill_climbing_steps(grid, start=_UNSET, rng=None):
             pos   = (nc, nr)
             score = grid.heuristic_value(*pos)
             scores[pos] = score
-            if score > best_score:
+            if score < best_score:
                 best_score, best_pos = score, pos
             yield {
                 "current":          current,
@@ -183,9 +183,9 @@ def steepest_ascent_hill_climbing_steps(grid, start=_UNSET, rng=None):
 # ══════════════════════════════════════════════════════════════════
 def stochastic_hill_climbing_steps(grid, start=_UNSET, rng=None):
     """Stochastic Hill Climbing.
-    Trong tập các láng giềng tốt hơn hiện tại, chọn ngẫu nhiên có
-    trọng số tỷ lệ với mức độ cải thiện. Có thể thoát local maxima
-    tốt hơn Simple/Steepest HC.
+    Trong tập các láng giềng có chi phí thấp hơn hiện tại, chọn ngẫu nhiên có
+    trọng số tỷ lệ với mức độ cải thiện. Có thể thoát local minima tốt hơn
+    Simple/Steepest HC.
     """
     rng     = rng or random.Random()
     start   = grid.start if start is _UNSET else start
@@ -194,7 +194,7 @@ def stochastic_hill_climbing_steps(grid, start=_UNSET, rng=None):
     while True:
         current_score = grid.heuristic_value(*current)
         scores        = {}
-        uphill        = []   # (pos, improvement)
+        downhill      = []   # (pos, improvement)
 
         for dc, dr in ORTHOGONAL_DIRECTIONS:
             nc, nr = current[0] + dc, current[1] + dr
@@ -206,8 +206,8 @@ def stochastic_hill_climbing_steps(grid, start=_UNSET, rng=None):
             pos   = (nc, nr)
             score = grid.heuristic_value(*pos)
             scores[pos] = score
-            if score > current_score:
-                uphill.append((pos, score - current_score))
+            if score < current_score:
+                downhill.append((pos, current_score - score))
             yield {
                 "current":          current,
                 "neighbor_scores":  {pos: score},
@@ -218,9 +218,9 @@ def stochastic_hill_climbing_steps(grid, start=_UNSET, rng=None):
             }
 
         chosen = None
-        if uphill:
-            weights = [w for _, w in uphill]
-            chosen = rng.choices([p for p, _ in uphill], weights=weights, k=1)[0]
+        if downhill:
+            weights = [w for _, w in downhill]
+            chosen = rng.choices([p for p, _ in downhill], weights=weights, k=1)[0]
 
         stuck = chosen is None
         yield {

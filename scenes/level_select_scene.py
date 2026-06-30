@@ -53,5 +53,4 @@ class LevelSelectScene(BaseScene):
     def _start_level(self, level):
         self.game_state.level = level
         self.game_state.kit_index = level
-        self.game_state.reset_energy()
         self.manager.change(C.STATE_GAMEPLAY)

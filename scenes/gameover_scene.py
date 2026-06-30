@@ -18,21 +18,12 @@ class GameOverScene(CutsceneScene):
         self.banner_text = "GAME OVER"
         self.graph = None
 
-        if self.game_state.gameover_reason == "stuck":
-            self.badge_lines = [
-                ("LOCAL MAXIMA", 15, C.COL_GOLD_BRIGHT),
-                ("Try:", 12, C.COL_CREAM_TEXT),
-                ("Stochastic HC", 14, C.COL_CREAM_TEXT),
-            ]
-            line = C.GAMEOVER_LINE_STUCK
-            AudioManager.instance().play_sfx("local_maxima")
-        else:
-            self.badge_lines = [
-                ("ENERGY: 0", 16, C.COL_GOLD_BRIGHT),
-                ("Try Again", 14, C.COL_CREAM_TEXT),
-            ]
-            line = C.GAMEOVER_LINE_ENERGY
-            AudioManager.instance().play_sfx("game_over")
+        self.badge_lines = [
+            ("GAME OVER", 16, C.COL_GOLD_BRIGHT),
+            ("Try Again", 14, C.COL_CREAM_TEXT),
+        ]
+        line = C.GAMEOVER_LINE_STUCK
+        AudioManager.instance().play_sfx("game_over")
 
         self.dialogue.set_text(line, kit_index=self.game_state.kit_index)
         self._next_action = self._restart_level
