@@ -88,10 +88,10 @@ class GridModel:
         return abs(a[0] - b[0]) + abs(a[1] - b[1])
 
     def heuristic_value(self, col, row):
-        """Used by Hill Climbing levels: higher is better. Combines
-        proximity to the goal with cell safety / numeric value.
+        """Used by Hill Climbing levels: lower is better.
 
-        Nếu goal=None, trả về giá trị dựa trên safety hoặc giá trị ô.
+        h(n) = cell value + Manhattan distance to goal.
+        Nếu cell.value không tồn tại thì hazard penalty vẫn được giữ.
         """
         cell = self.cells[(col, row)]
         if self.goal is None:
@@ -99,9 +99,7 @@ class GridModel:
                 return cell.value
             return 10 - {"fire": 8, "danger": 3}.get(cell.kind, 0)
 
-        max_dist = self.cols + self.rows
         dist = self.manhattan((col, row), self.goal)
-        proximity_score = (max_dist - dist) * 2
-        if cell.value is not None:
-            return proximity_score + cell.value
-        return proximity_score - {"fire": 8, "danger": 3}.get(cell.kind, 0)
+        base_value = cell.value if cell.value is not None else 0
+        hazard_penalty = 0 if cell.value is not None else {"fire": 8, "danger": 3}.get(cell.kind, 0)
+        return base_value + dist - hazard_penalty

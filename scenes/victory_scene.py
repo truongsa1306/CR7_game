@@ -29,8 +29,6 @@ class VictoryScene(CutsceneScene):
         self.banner_text = "WORLD CUP WON!"
         self.badge_lines = [
             ("FINAL", 16, C.COL_GOLD_BRIGHT),
-            ("Energy Left:", 13, C.COL_CREAM_TEXT),
-            (str(self.game_state.energy), 18, C.COL_GOLD_BRIGHT),
         ]
         self.graph = ("Champion Path", [1, 3, 5, 8, 13, 21, 34])
         self.dialogue.set_text(C.VICTORY_LINE, kit_index=self.game_state.kit_index)

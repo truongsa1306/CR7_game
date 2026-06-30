@@ -70,10 +70,18 @@ def _resolve_sources(grid, start):
 
 
 def _heuristic(grid, pos, goal):
-    """Manhattan distance đến goal. Bằng 0 nếu goal=None (admissible)."""
+    """Heuristic used by Greedy and A*.
+
+    h(n) = cell value + Manhattan distance to goal.
+    Bằng 0 nếu goal=None.
+    """
     if goal is None:
         return 0
-    return grid.manhattan(pos, goal)
+    cell = grid.get(*pos)
+    if cell is None:
+        return 0
+    value = cell.value if cell.value is not None else 0
+    return value + grid.manhattan(pos, goal)
 
 
 def _step_cost(cell):

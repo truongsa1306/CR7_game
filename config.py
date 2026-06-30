@@ -6,8 +6,6 @@ from pathlib import Path
 SCREEN_W, SCREEN_H = 1024, 576
 FPS = 60
 GAME_TITLE = "CR7 Algorithm Quest"
-START_ENERGY = 100
-MAX_ENERGY = 100
 
 # Asset Directory
 ASSETS_DIR = Path(__file__).parent / "assets"
@@ -77,7 +75,6 @@ GRID_ORIGIN = (40, 80)
 GRID_RECT = pygame.Rect(40, 80, 640, 400)
 SIDE_PANEL_RECT = pygame.Rect(700, 80, 300, 300)
 
-HEADER_ENERGY_RECT = pygame.Rect(40, 30, 200, 40)
 HEADER_TITLE_RECT = pygame.Rect(300, 30, 424, 40)
 LEVEL_BADGE_ICON_RECT = pygame.Rect(740, 30, 40, 40)
 THUMBNAIL_MAP_RECT = pygame.Rect(700, 100, 120, 100)
@@ -139,7 +136,6 @@ LEVELUP_LINES = {
 
 VICTORY_LINE = "Tuyet voi! Ban da hoai thanh toan bo tro choi. Ban la nguoi thang!"
 
-GAMEOVER_LINE_ENERGY = "Het nang luong... hay thu lai!"
 GAMEOVER_LINE_STUCK = "Khong the tien tiep... thu thuat toan khac!"
 
 # Cell Cost Mapping

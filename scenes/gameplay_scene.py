@@ -3,8 +3,7 @@ scenes/gameplay_scene.py
 ========================
 Interactive grid/tutorial scene from the spec. It renders the stadium UI
 layout at 1024x576, visualizes the selected search algorithm step by step,
-spends energy when CR7 moves across cells, and transitions to LevelUp,
-GameOver, or Victory scenes.
+and transitions to LevelUp, GameOver, or Victory scenes.
 """
 import random
 from collections import deque
@@ -384,16 +383,23 @@ class GameplayScene(BaseScene):
         self.manager.change(C.STATE_LEVEL_SELECT)
 
     def _randomize_value_cells(self, grid):
+        max_dist = grid.cols + grid.rows
         for (col, row), cell in grid.cells.items():
             if cell.kind == "wall":
                 continue
             if (col, row) == grid.goal:
                 continue
-            value = random.choices(
-                population=[-10, -8, -6, -4, -2, 0, 2, 4, 6, 8, 10],
-                weights=[5, 8, 10, 12, 15, 15, 12, 10, 8, 5, 5],
-                k=1,
-            )[0]
+            dist = grid.manhattan((col, row), grid.goal)
+            value_candidates = [-10, -8, -6, -4, -2, 0, 2, 4, 6, 8, 10]
+            weights = []
+            for value in value_candidates:
+                if value < 0:
+                    weights.append(10 + max(0, max_dist - dist))
+                elif value == 0:
+                    weights.append(12)
+                else:
+                    weights.append(10 + dist)
+            value = random.choices(population=value_candidates, weights=weights, k=1)[0]
             cell.value = value
             if value >= 6:
                 cell.kind = "grass"
@@ -412,14 +418,30 @@ class GameplayScene(BaseScene):
 
     def _set_hill_climbing_dialogue(self, step):
         chosen = step.get("chosen")
+        current_score = self.grid.heuristic_value(*self.current) if self.grid and self.current else None
+        chosen_score = self.grid.heuristic_value(*chosen) if self.grid and chosen else None
         if chosen is None:
-            message = "Bước này không tốt, để chọn bước khác xem nào."
+            if current_score is None:
+                message = "Đang kiểm tra ô..."
+            else:
+                message = f"Không có ô nào có chi phí thấp hơn {current_score:.0f}, đang tìm hướng khác."
         elif self.algorithm_name == "Hill Climbing":
-            message = f"Ô {chosen} tốt hơn, chọn bước đó."
+            message = (
+                f"Ô {chosen} tốt hơn vì h(n)={chosen_score:.0f} < {current_score:.0f}. "
+                "Chọn ô này và di chuyển."
+            )
         elif self.algorithm_name == "Steepest Ascent HC":
-            message = f"Chọn ô tốt nhất {chosen} trong 4 ô xung quanh."
+            message = (
+                f"Ô {chosen} là ô tốt nhất trong các láng giềng với h(n)={chosen_score:.0f}. "
+                "Chọn ô tối ưu nhất."
+            )
         else:
-            message = f"Chọn ô tốt hơn {chosen} trong tập các láng giềng."
+            neighbors = sorted(step.get("neighbor_scores", {}).items(), key=lambda item: item[1])
+            neighbor_text = ", ".join(f"{pos}:{score:.0f}" for pos, score in neighbors[:4])
+            message = (
+                f"Stochastic HC xem xét: {neighbor_text}. "
+                f"Ngẫu nhiên chọn {chosen} với h(n)={chosen_score:.0f}."
+            )
         self.dialogue.set_text(message, kit_index=self.game_state.kit_index)
 
     def _move_player(self, pos):
@@ -438,19 +460,12 @@ class GameplayScene(BaseScene):
         self.player.move_to_grid(pos[0], pos[1], self.grid_rect.topleft, self.cell_size)
         self.current = pos
         self.grid.reveal_around(*pos, radius=1)
-        energy_change = cell.cost or 0
-        if energy_change < 0:
-            self.game_state.spend_energy(abs(energy_change))
-        elif energy_change > 0:
-            self.game_state.energy = min(C.MAX_ENERGY, self.game_state.energy + energy_change)
         if cell.kind in ("danger", "fire"):
             AudioManager.instance().play_sfx("danger_trigger", volume=0.8)
         else:
             AudioManager.instance().play_sfx("cell_step", volume=0.7)
         if pos == self.grid.goal:
             self._finish_level()
-        elif self.game_state.energy <= 0:
-            self._go_gameover("energy")
 
     def _finish_level(self):
         self.finished = True
@@ -469,13 +484,6 @@ class GameplayScene(BaseScene):
 
     # ------------------------------------------------------------------
     def _draw_headers(self, surface):
-        draw_wood_panel(surface, C.HEADER_ENERGY_RECT, border=4, corner=8, fill=(58, 36, 26))
-        coin_center = (C.HEADER_ENERGY_RECT.left + 25, C.HEADER_ENERGY_RECT.centery)
-        pygame.draw.circle(surface, C.COL_GOLD_BRIGHT, coin_center, 12)
-        pygame.draw.circle(surface, C.COL_GOLD, coin_center, 12, 2)
-        draw_text(surface, f"Ngan luong: {self.game_state.energy}", (C.HEADER_ENERGY_RECT.left + 48, C.HEADER_ENERGY_RECT.top + 9),
-                  size=18, color=C.COL_CREAM_TEXT)
-
         title = C.LEVEL_TITLES.get(self.game_state.level, f"Level {self.game_state.level}")
         draw_text(surface, title, (C.HEADER_TITLE_RECT.centerx, C.HEADER_TITLE_RECT.top + 6),
                   size=21, color=C.COL_CREAM_TEXT, align="center")
@@ -587,18 +595,33 @@ class GameplayScene(BaseScene):
         panel = C.SIDE_PANEL_RECT
         draw_wood_panel(surface, panel, border=5, corner=8, fill=(54, 32, 24))
         if self.neighbor_scores:
+            draw_text(surface, "DANH GIA", (panel.centerx, panel.top + 12),
+                      size=15, color=C.COL_CREAM_TEXT, align="center")
             if self.algorithm_name in {"BFS", "DFS", "IDS"}:
-                draw_text(surface, "DANH GIA", (panel.centerx, panel.top + 12),
-                          size=15, color=C.COL_CREAM_TEXT, align="center")
                 draw_text(surface, "KHONG CO HEURISTIC", (panel.centerx, panel.top + 34),
                           size=11, color=C.COL_CREAM_TEXT, align="center", shadow=False)
             else:
-                draw_text(surface, "DANH GIA", (panel.centerx, panel.top + 12),
-                          size=15, color=C.COL_CREAM_TEXT, align="center")
                 draw_text(surface, "HEURISTIC LAN CAN", (panel.centerx, panel.top + 34),
                           size=11, color=C.COL_CREAM_TEXT, align="center", shadow=False)
+                if self.algorithm_name in {"UCS", "Greedy", "A*"} and self.current and self.grid is not None:
+                    current_cell = self.grid.get(*self.current)
+                    if current_cell is not None:
+                        draw_text(surface, f"g(n): {current_cell.g:.0f}",
+                                  (panel.left + 22, panel.top + 34), size=12,
+                                  color=C.COL_CREAM_TEXT)
+                        draw_text(surface, f"h(n): {current_cell.h:.0f}",
+                                  (panel.left + 112, panel.top + 34), size=12,
+                                  color=C.COL_CREAM_TEXT)
+                        draw_text(surface, f"f(n): {current_cell.f:.0f}",
+                                  (panel.left + 202, panel.top + 34), size=12,
+                                  color=C.COL_GOLD_BRIGHT)
             y = panel.top + 64
-            for pos, score in sorted(self.neighbor_scores.items(), key=lambda item: item[1], reverse=True)[:5]:
+            if self.algorithm_name in {"Hill Climbing", "Steepest Ascent HC", "Stochastic HC"}:
+                sorted_neighbors = sorted(self.neighbor_scores.items(), key=lambda item: item[1])
+            else:
+                sorted_neighbors = sorted(self.neighbor_scores.items(), key=lambda item: item[1], reverse=True)
+
+            for pos, score in sorted_neighbors[:5]:
                 color = C.COL_GOLD_BRIGHT if pos == self.chosen else C.COL_CREAM_TEXT
                 draw_text(surface, f"{pos}: {score}", (panel.left + 22, y), size=13, color=color)
                 y += 24
@@ -631,11 +654,11 @@ class GameplayScene(BaseScene):
 
     def _cell_color(self, kind, value=None):
         if value is not None:
-            if value > 0:
+            if value < 0:
                 return C.COL_GRASS_LIGHT
             if value == 0:
                 return C.COL_PATH_GREY
-            if value >= -4:
+            if value <= 4:
                 return C.COL_SILVER
             return C.COL_DANGER_RED
         return {
