@@ -1,9 +1,15 @@
-
 import pygame
 from pathlib import Path
 
 # Game Constants
-SCREEN_W, SCREEN_H = 1024, 576
+# SCREEN_H tăng từ 576 -> 720: ở Level 5 (Caro), bàn cờ 5x5 (CELL=92) một mình
+# đã cần panel cao 476px bắt đầu từ y=110 (kết thúc ở y=586), tức là VƯỢT quá
+# 576px của màn hình gốc. Cộng thêm dialog panel "TIẾN TRÌNH GIẢI" bên dưới
+# (y=600 -> 690) thì càng không đủ chỗ. 720px đủ dư cho toàn bộ layout của
+# scene này (bàn cờ, info panel, dialog panel, hàng nút) mà không đè/cắt nhau.
+# Các scene khác (dùng toạ độ tuyệt đối, ví dụ DIALOG_PANEL_RECT kết thúc ở
+# y=576) không bị ảnh hưởng - chỉ có thêm khoảng trống phía dưới, không lỗi.
+SCREEN_W, SCREEN_H = 1024, 720
 FPS = 60
 GAME_TITLE = "CR7 Algorithm Quest"
 
