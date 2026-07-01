@@ -61,28 +61,44 @@ class DialogueBox:
         self._gem_phase += dt
 
     def draw(self, surface):
-        draw_wood_panel(surface, C.DIALOG_PANEL_RECT, border=6, corner=12)
+        panel_rect = C.DIALOG_PANEL_RECT
+        draw_wood_panel(surface, panel_rect, border=6, corner=12)
 
-        # Portrait (poking above the panel edge slightly, per spec)
+        # Large portrait attached to the bottom dialogue frame.
         am = AssetManager.instance()
         kit_color = C.KITS[self.kit_index]["color"]
+        portrait_rect = pygame.Rect(
+            panel_rect.left + 42,
+            panel_rect.top - 72,
+            150,
+            164,
+        )
+        plate_rect = portrait_rect.inflate(12, 10)
+        pygame.draw.rect(surface, (34, 20, 15), plate_rect, border_radius=9)
+        pygame.draw.rect(surface, (226, 184, 96), plate_rect, 3, border_radius=9)
         portrait = am.get_image(
             f"sprites/characters/cr7_portrait_{C.KITS[self.kit_index]['name']}.png",
-            size=(C.PORTRAIT_RECT.width, C.PORTRAIT_RECT.height),
+            size=(portrait_rect.width, portrait_rect.height),
             placeholder=lambda size: placeholder_portrait(size, kit_color),
         )
-        surface.blit(portrait, C.PORTRAIT_RECT.topleft)
-        pygame.draw.rect(surface, C.COL_GOLD, C.PORTRAIT_RECT, 3, border_radius=8)
+        surface.blit(portrait, portrait_rect.topleft)
+        pygame.draw.rect(surface, C.COL_GOLD, portrait_rect, 3, border_radius=8)
 
         # Typewriter text
+        text_rect = pygame.Rect(
+            portrait_rect.right + 24,
+            panel_rect.top + 13,
+            C.SKIP_BUTTON_RECT.left - portrait_rect.right - 38,
+            panel_rect.height - 22,
+        )
         visible = self.text[: int(self.shown_chars)]
-        draw_text(surface, visible, C.TEXT_AREA_RECT.topleft, size=16,
-                  color=C.COL_CREAM_TEXT, max_width=C.TEXT_AREA_RECT.width)
+        draw_text(surface, visible, text_rect.topleft, size=16,
+                  color=C.COL_CREAM_TEXT, max_width=text_rect.width)
 
         if self.status_text:
-            status_pos = (C.TEXT_AREA_RECT.left, C.TEXT_AREA_RECT.bottom - 18)
+            status_pos = (text_rect.left, text_rect.bottom - 18)
             draw_text(surface, self.status_text, status_pos, size=14,
-                      color=C.COL_HIGHLIGHT_PURPLE, align="left", max_width=C.TEXT_AREA_RECT.width)
+                      color=C.COL_HIGHLIGHT_PURPLE, align="left", max_width=text_rect.width)
 
         # Currency / gem icon (simple pulsing emerald placeholder)
         import math

@@ -19,7 +19,7 @@ from systems.algorithms.belief_search import (
     heuristic_components,
     score_state,
 )
-from systems.asset_manager import AssetManager, draw_pixel_number, placeholder_trophy, terrain_tile_name
+from systems.asset_manager import AssetManager, draw_pixel_number, draw_world_cup_trophy, terrain_tile_name
 from systems.audio_manager import AudioManager
 from ui.button import Button, ToggleGroup
 from ui.label import draw_text
@@ -784,12 +784,14 @@ class BeliefSearchScene(BaseScene):
                 draw_text(surface, "×", rect.center, size=max(10, rect.height // 2),
                           color=C.COL_CREAM_TEXT, align="center", shadow=False)
             elif cell.kind == "trophy":
-                trophy = AssetManager.instance().get_image(
-                    "sprites/ui/trophy_worldcup.png",
-                    size=(max(10, int(rect.width * 0.55)), max(10, int(rect.height * 0.62))),
-                    placeholder=placeholder_trophy,
+                trophy_rect = pygame.Rect(
+                    0,
+                    0,
+                    max(10, int(rect.width * 0.55)),
+                    max(10, int(rect.height * 0.62)),
                 )
-                surface.blit(trophy, trophy.get_rect(center=(rect.centerx, rect.centery - 2)))
+                trophy_rect.center = (rect.centerx, rect.centery - 2)
+                draw_world_cup_trophy(surface, trophy_rect)
             elif cell.value is not None:
                 self._draw_level_two_value(surface, rect, cell)
 

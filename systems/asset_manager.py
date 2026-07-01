@@ -29,6 +29,9 @@ TERRAIN_TILE_NAMES = (
 PIXEL_FONT_CHARS = "0123456789+-=hgf.n"
 PIXEL_GLYPH_W = 11
 PIXEL_GLYPH_H = 15
+WORLD_CUP_FRAME_W = 96
+WORLD_CUP_FRAME_H = 128
+WORLD_CUP_FRAME_COUNT = 16
 
 
 class AssetManager:
@@ -169,6 +172,35 @@ class AssetManager:
         self._images[key] = glyph
         return glyph
 
+    def get_world_cup_frame(self, frame_index=0, size=None):
+        frame_index = int(frame_index) % WORLD_CUP_FRAME_COUNT
+        key = ("world_cup_frame", frame_index, size)
+        if key in self._images:
+            return self._images[key]
+
+        rel_path = "sprites/ui/world_cup_trophy_clean_sheet.png"
+        full_path = C.ASSETS_DIR / rel_path
+        if full_path.exists():
+            sheet = self.get_image(rel_path)
+            rect = pygame.Rect(
+                frame_index * WORLD_CUP_FRAME_W,
+                0,
+                WORLD_CUP_FRAME_W,
+                WORLD_CUP_FRAME_H,
+            )
+            if sheet.get_width() >= rect.right and sheet.get_height() >= rect.bottom:
+                frame = sheet.subsurface(rect).copy()
+            else:
+                frame = placeholder_trophy((WORLD_CUP_FRAME_W, WORLD_CUP_FRAME_H))
+        else:
+            self._warn_once(rel_path)
+            frame = placeholder_trophy((WORLD_CUP_FRAME_W, WORLD_CUP_FRAME_H))
+
+        if size is not None:
+            frame = pygame.transform.scale(frame, size)
+        self._images[key] = frame
+        return frame
+
 
 def terrain_tile_name(kind, value=None):
     if kind == "wall":
@@ -221,6 +253,14 @@ def draw_pixel_number(surface, text, pos, scale=2, align="center", spacing=1):
         surface.blit(glyph, (cursor, y))
         cursor += glyph.get_width() + spacing * scale
     return pygame.Rect(x, y, width, height)
+
+
+def draw_world_cup_trophy(surface, rect, t=None):
+    if t is None:
+        t = pygame.time.get_ticks() / 1000.0
+    frame_index = int(t * 9) % WORLD_CUP_FRAME_COUNT
+    trophy = AssetManager.instance().get_world_cup_frame(frame_index, rect.size)
+    surface.blit(trophy, rect.topleft)
 
 
 # ---------------------------------------------------------------------------

@@ -33,6 +33,7 @@ Place the production assets in the paths below.
 - `sprites/characters/cr7_portrait_united.png` - 140x150 CR7 Man United red kit portrait.
 - `sprites/characters/cr7_portrait_real.png` - 140x150 CR7 Real Madrid white kit portrait.
 - `sprites/characters/cr7_portrait_juve.png` - 140x150 CR7 Juventus black-and-white kit portrait.
+- `sprites/characters/cr7_portrait_Kit1.png` through `cr7_portrait_Kit6.png` - 150x164 enlarged transparent pixel CR7 portraits for the active dialogue kits.
 - `sprites/characters/cr7_chibi_sporting.png` - 50x96 multi-frame sprite sheet in green kit.
 - `sprites/characters/cr7_chibi_united.png` - 50x96 multi-frame sprite sheet in red kit.
 - `sprites/characters/cr7_chibi_real.png` - 50x96 multi-frame sprite sheet in white kit.
@@ -66,10 +67,13 @@ Place the production assets in the paths below.
 
 - `sprites/ui/frame_border_tiles.png` - 9-slice wooden border textures with ornate gold corner pieces.
 - `sprites/ui/dialog_box_base.png` - Wood panel background pattern for dialog frames.
+- `sprites/ui/dialog_frame_sheet.png` - Pixel wood/gold 9-slice spritesheet for shared panels, dialogue boxes, and screen frame corners.
+- `sprites/ui/stadium_background_sheet.png` - Two-frame pixel stadium background spritesheet used behind all gameplay/cutscene screens.
 - `sprites/ui/button_wood_slice.png` - 9-slice button base with normal, hover, and active dark wood textures.
 - `sprites/ui/gold_crest_badge.png` - Decorative badge outline for level number icons.
 - `sprites/ui/cr7_winged_logo.png` - CR7 logo template with gold wings.
 - `sprites/ui/trophy_worldcup.png` - Golden World Cup trophy sprite with shimmer/spark particles.
+- `sprites/ui/world_cup_trophy_clean_sheet.png` - 16-frame transparent World Cup trophy animation cut from the source sheet with baked shine highlights.
 - `sprites/ui/path_arrow.png` - Yellow glow arrows pointing up, down, left, and right.
 - `sprites/ui/gem_currency.png` - Rotating green emerald icon sprite sheet.
 - `sprites/ui/pixel_numbers.png` - Pixel numeric glyph atlas for grid costs, h/g/f labels, and signed cell values.

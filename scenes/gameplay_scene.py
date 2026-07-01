@@ -23,7 +23,7 @@ from systems.algorithms.hill_climbing import (
     stochastic_hill_climbing_steps,
 )
 from systems.algorithms.informed_search import astar_steps, greedy_steps, ucs_steps
-from systems.asset_manager import AssetManager, draw_pixel_number, placeholder_trophy, terrain_tile_name
+from systems.asset_manager import AssetManager, draw_pixel_number, draw_world_cup_trophy, terrain_tile_name
 from systems.audio_manager import AudioManager
 from ui.button import Button, ToggleGroup
 from ui.dialogue_box import DialogueBox
@@ -1488,12 +1488,7 @@ class GameplayScene(BaseScene):
         draw_text(surface, title, (C.HEADER_TITLE_RECT.centerx, C.HEADER_TITLE_RECT.top + 6),
                   size=21, color=C.COL_CREAM_TEXT, align="center")
 
-        trophy = AssetManager.instance().get_image(
-            "sprites/ui/trophy_worldcup.png",
-            size=(C.LEVEL_BADGE_ICON_RECT.width, C.LEVEL_BADGE_ICON_RECT.height),
-            placeholder=placeholder_trophy,
-        )
-        surface.blit(trophy, C.LEVEL_BADGE_ICON_RECT.topleft)
+        draw_world_cup_trophy(surface, C.LEVEL_BADGE_ICON_RECT)
 
     def _draw_thumbnail(self, surface):
         rect = C.THUMBNAIL_MAP_RECT
@@ -1569,12 +1564,9 @@ class GameplayScene(BaseScene):
         if cell.kind == "fire":
             self.fire.draw(surface, rect.inflate(-10, -8))
         elif cell.kind == "trophy":
-            trophy = AssetManager.instance().get_image(
-                "sprites/ui/trophy_worldcup.png",
-                size=(int(self.cell_size * 0.75), int(self.cell_size * 0.85)),
-                placeholder=placeholder_trophy,
-            )
-            surface.blit(trophy, trophy.get_rect(center=rect.center))
+            trophy_rect = pygame.Rect(0, 0, int(self.cell_size * 0.75), int(self.cell_size * 0.85))
+            trophy_rect.center = rect.center
+            draw_world_cup_trophy(surface, trophy_rect)
 
         if self._should_draw_cell_value(cell):
             if self.game_state.level == 2 and self.algorithm_name in HILL_CLIMBING_ALGORITHMS:

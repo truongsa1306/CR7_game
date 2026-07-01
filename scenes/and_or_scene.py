@@ -13,7 +13,7 @@ from entities.player import Player
 from entities.grid_cell import GridModel
 from scenes.base_scene import BaseScene
 from systems.algorithms.and_or_search import and_or_graph_search
-from systems.asset_manager import AssetManager, draw_pixel_number, placeholder_trophy, terrain_tile_name
+from systems.asset_manager import AssetManager, draw_pixel_number, draw_world_cup_trophy, terrain_tile_name
 from systems.audio_manager import AudioManager
 from ui.button import Button
 from ui.label import draw_text
@@ -776,12 +776,9 @@ class AndOrSearchScene(BaseScene):
             draw_text(surface, "×", rect.center, size=max(13, rect.height // 2),
                       color=C.COL_CREAM_TEXT, align="center", shadow=False)
         elif kind == "trophy":
-            trophy = AssetManager.instance().get_image(
-                "sprites/ui/trophy_worldcup.png",
-                size=(int(rect.width * 0.56), int(rect.height * 0.62)),
-                placeholder=placeholder_trophy,
-            )
-            surface.blit(trophy, trophy.get_rect(center=rect.center))
+            trophy_rect = pygame.Rect(0, 0, int(rect.width * 0.56), int(rect.height * 0.62))
+            trophy_rect.center = rect.center
+            draw_world_cup_trophy(surface, trophy_rect)
         elif hidden:
             draw_text(surface, "?", rect.center, size=max(17, rect.height // 2),
                       color=C.COL_BLACK, align="center", shadow=False)
