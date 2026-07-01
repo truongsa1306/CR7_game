@@ -60,7 +60,9 @@ class LevelSelectScene(BaseScene):
     def _start_level(self, level):
         self.game_state.level = level
         self.game_state.kit_index = level
-        if level == 4:
+        if level == 3:
+            self.manager.change(C.STATE_BELIEF)
+        elif level == 4:
             self.manager.change(C.STATE_CARO)
         elif level == 5:
             self.manager.change(C.STATE_EIGHT_QUEENS)
