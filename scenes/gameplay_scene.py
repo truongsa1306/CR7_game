@@ -250,6 +250,7 @@ class GameplayScene(BaseScene):
         self.belief_button = None
         self.and_or_button = None
         self.back_button = None
+        self.return_button = None
         self.level4_toggle = None
         self.level4_tab = 0
         self.visited = set()
@@ -281,6 +282,7 @@ class GameplayScene(BaseScene):
         self.hill_trace_rows = []
         self.hill_status_message = ""
         self.hill_path_history = []
+        self.search_start_pos = None
 
     def on_enter(self, **kwargs):
         if self.game_state.level == 4:
@@ -320,6 +322,8 @@ class GameplayScene(BaseScene):
             self.and_or_button.handle_event(event)
         if self.back_button is not None:
             self.back_button.handle_event(event)
+        if self.return_button is not None:
+            self.return_button.handle_event(event)
         if self.progress_prev_button is not None:
             self.progress_prev_button.handle_event(event)
         if self.progress_next_button is not None:
@@ -436,6 +440,7 @@ class GameplayScene(BaseScene):
         self.progress_prev_button = None
         self.progress_next_button = None
         self.progress_auto_button = None
+        self.return_button = None
         self.back_button = Button(
             pygame.Rect(panel.left + 12, panel.bottom - 3 * button_h - 2 * gap - 12, panel.width - 24, button_h),
             "BACK",
@@ -444,10 +449,19 @@ class GameplayScene(BaseScene):
         )
 
         if self.game_state.level in EDITABLE_MATRIX_LEVELS:
+            bottom_gap = 5
+            bottom_w = (panel.width - 24 - bottom_gap) // 2
+            self.return_button = Button(
+                pygame.Rect(panel.left + 12, panel.bottom - button_h - 12, bottom_w, button_h),
+                "RETURN",
+                font_size=10,
+                on_click=self._return_to_start,
+            )
             self.back_button = Button(
-                pygame.Rect(panel.left + 12, panel.bottom - button_h - 12, panel.width - 24, button_h),
+                pygame.Rect(panel.left + 12 + bottom_w + bottom_gap, panel.bottom - button_h - 12,
+                            panel.width - 24 - bottom_w - bottom_gap, button_h),
                 "BACK",
-                font_size=11,
+                font_size=10,
                 on_click=self._back_to_level_select,
             )
             control_y = panel.bottom - 2 * button_h - gap - 12
@@ -546,30 +560,31 @@ class GameplayScene(BaseScene):
             self._reset_algorithm_run(reset_energy=False)
         if self.grid is None:
             return
-
-        if name == self.algorithm_name:
-            self.game_state.suggest_algorithm = None
-            if not self.auto_play:
-                self.auto_play = True
-                self.step_timer = 0.0
-            return
-
         if name not in ALGORITHM_FACTORIES:
             self.dialogue.set_status(f"Thuật toán {name} chưa hỗ trợ")
             return
 
+        # Mỗi lần chọn thuật toán, bắt đầu từ đúng ô CR7 đang đứng.
+        # Không đưa nhân vật về grid.start và không hồi lại năng lượng ngầm.
+        start_pos = (self.player.col, self.player.row)
+        if start_pos not in self.grid.cells or not self.grid.get(*start_pos).passable:
+            start_pos = self.grid.start
+            self.player.place_at_grid(*start_pos, self.grid_rect.topleft, self.cell_size)
+
         self.algorithm_name = name
         self.game_state.suggest_algorithm = None
         self.matrix_edit_mode = False
-        if self.game_state.level in {0, 1, 2} and self.grid.start is not None:
-            self.game_state.reset_health()
-            self.algorithm_health = self.game_state.current_health
-            self.current = self.grid.start
-            self.player.place_at_grid(*self.grid.start, self.grid_rect.topleft, self.cell_size)
-            self._clear_algorithm_scores()
-            if self.game_state.level == 2:
-                self._apply_hill_climbing_h_values(self.grid)
-        start_pos = self.current if self.current is not None else (self.player.col, self.player.row)
+        self.follow_path = []
+        self.player._tween_x = None
+        self.player._tween_y = None
+        self.player.state = "idle"
+        self.current = start_pos
+        self.search_start_pos = start_pos
+        self._clear_algorithm_scores()
+        if self.game_state.level == 2:
+            self._apply_hill_climbing_h_values(self.grid)
+
+        self.algorithm_health = self.game_state.current_health
         try:
             self.generator = ALGORITHM_FACTORIES[self.algorithm_name](
                 self.grid,
@@ -584,24 +599,28 @@ class GameplayScene(BaseScene):
             print(f"[Gameplay] failed to start algorithm {name}: {exc}")
             return
 
-        self.visited = {self.current} if self.current is not None else set()
+        self.visited = {start_pos}
         self.frontier = set()
         self.final_path = []
         self.neighbor_scores = {}
         self.chosen = None
         self.temperature = None
+        self.depth_limit = None
+        self.restarting = False
         self.search_trace_rows = []
         self.last_search_step = None
         self.algorithm_history = []
         self.algorithm_history_index = -1
         self.hill_trace_rows = []
         self.hill_status_message = ""
-        self.hill_path_history = [start_pos] if start_pos is not None else []
-        self.algorithm_health = self.game_state.current_health
+        self.hill_path_history = [start_pos]
         self.finished = False
+        self.searching = False
         self.auto_play = True
         self.step_timer = 0.0
-        self.dialogue.set_status(f"Đang chạy {name}...")
+        self.dialogue.set_status(
+            f"Đang chạy {name} từ vị trí hiện tại {start_pos}..."
+        )
 
     def _run_and_or_search(self):
         if self.grid is None:
@@ -709,6 +728,7 @@ class GameplayScene(BaseScene):
         self.final_path = []
         self.follow_path = []
         self.current = self.grid.start
+        self.search_start_pos = self.grid.start
         self.neighbor_scores = {}
         self.chosen = None
         self.temperature = None
@@ -886,7 +906,10 @@ class GameplayScene(BaseScene):
                 self._record_hill_climbing_step(step)
             else:
                 self.frontier = set(step.get("frontier", []))
-                self.visited = set(step.get("visited", self.visited))
+                if self.game_state.level == 1 and self.algorithm_name in INFORMED_SEARCH_ALGORITHMS:
+                    self.visited = set(step.get("expanded", []))
+                else:
+                    self.visited = set(step.get("visited", self.visited))
                 if self.game_state.level in {0, 1} and self.algorithm_name in TRACE_TABLE_ALGORITHMS:
                     self._record_blind_search_step(step)
 
@@ -1081,6 +1104,7 @@ class GameplayScene(BaseScene):
         self.final_path = []
         self.follow_path = []
         self.current = self.grid.start
+        self.search_start_pos = self.grid.start
         self.neighbor_scores = {}
         self.chosen = None
         self.temperature = None
@@ -1259,6 +1283,45 @@ class GameplayScene(BaseScene):
             self.algorithm_name = C.LEVEL_ALGORITHMS[3][0]
         self._create_algorithm_buttons()
         self._reset_algorithm_run(reset_energy=False)
+
+    def _return_to_start(self):
+        """Return CR7 to the original start cell and prepare the selected algorithm again."""
+        if self.grid is None or self.grid.start is None:
+            return
+        self.auto_play = False
+        self.finished = False
+        self.searching = False
+        self.follow_path = []
+        self.final_path = []
+        self.player._tween_x = None
+        self.player._tween_y = None
+        self.player.state = "idle"
+        self.player.place_at_grid(*self.grid.start, self.grid_rect.topleft, self.cell_size)
+        self.game_state.reset_health()
+        self.algorithm_health = self.game_state.current_health
+        self.current = self.grid.start
+        self.search_start_pos = self.grid.start
+        self.visited = {self.grid.start}
+        self.frontier = set()
+        self.neighbor_scores = {}
+        self.chosen = None
+        self.temperature = None
+        self.depth_limit = None
+        self.restarting = False
+        self.search_trace_rows = []
+        self.last_search_step = None
+        self.algorithm_history = []
+        self.algorithm_history_index = -1
+        self.hill_trace_rows = []
+        self.hill_status_message = ""
+        self.hill_path_history = [self.grid.start]
+        self._clear_algorithm_scores()
+        if self.game_state.level == 2:
+            self._apply_hill_climbing_h_values(self.grid)
+        self.generator = ALGORITHM_FACTORIES[self.algorithm_name](
+            self.grid, start=self.grid.start, health=self.algorithm_health
+        )
+        self.dialogue.set_status("Đã RETURN về vị trí xuất phát. Nhấn NEXT/AUTO hoặc chọn thuật toán để chơi lại.")
 
     def _back_to_level_select(self):
         # Preserve current game state but go back to level selection for customization
@@ -1689,7 +1752,7 @@ class GameplayScene(BaseScene):
         self.search_trace_rows.append({
             "node": step.get("current"),
             "frontier": list(step.get("frontier", [])),
-            "reached": list(step.get("reached_order", step.get("visited", []))),
+            "reached": list(step.get("expanded", step.get("reached_order", step.get("visited", [])))),
             "depth_limit": step.get("depth_limit"),
             "restarting": step.get("restarting", False),
             "children": list(step.get("children", [])),
@@ -1712,13 +1775,17 @@ class GameplayScene(BaseScene):
         self.follow_path = []
         self.searching = True
         self.finished = False
-        self.player.place_at_grid(*self.grid.start, self.grid_rect.topleft, self.cell_size)
+        restore_pos = self.search_start_pos or self.grid.start
+        self.player.place_at_grid(*restore_pos, self.grid_rect.topleft, self.cell_size)
         self.player._tween_x = None
         self.player._tween_y = None
         self.player.state = "idle"
-        self.current = step.get("current") or self.grid.start
+        self.current = step.get("current") or restore_pos
         self.frontier = set(step.get("frontier", []))
-        self.visited = set(step.get("visited", self.visited))
+        if self.game_state.level == 1 and self.algorithm_name in INFORMED_SEARCH_ALGORITHMS:
+            self.visited = set(step.get("expanded", []))
+        else:
+            self.visited = set(step.get("visited", self.visited))
         self.final_path = list(step.get("path") or [])
         self.depth_limit = step.get("depth_limit", self.depth_limit)
         self.restarting = step.get("restarting", False)
@@ -1982,6 +2049,8 @@ class GameplayScene(BaseScene):
             draw_text(surface, "Mui ten: dieu khien", (panel.centerx, panel.bottom - 32),
                       size=12, color=C.COL_CREAM_TEXT, align="center")
 
+        if self.return_button is not None:
+            self.return_button.draw(surface)
         if self.back_button is not None:
             self.back_button.draw(surface)
         if self.progress_prev_button is not None:
@@ -2017,11 +2086,13 @@ class GameplayScene(BaseScene):
         return cell.kind not in ("start", "trophy", "wall")
 
     def _should_dim_level_one_cell(self, pos):
-        if self.game_state.level != 0 or self.algorithm_name not in BLIND_SEARCH_ALGORITHMS:
+        # Level 1 (blind) and Level 2 (informed) use the same light/dark
+        # visualization: current node, frontier and reached stay lit.
+        if self.game_state.level not in {0, 1} or self.algorithm_name not in TRACE_TABLE_ALGORITHMS:
             return False
         if not self.last_search_step:
             return False
-        lit = set(self.last_search_step.get("reached_order", []))
+        lit = set(self.last_search_step.get("expanded", self.last_search_step.get("reached_order", [])))
         lit.update(self.last_search_step.get("frontier", []))
         if self.current is not None:
             lit.add(self.current)
