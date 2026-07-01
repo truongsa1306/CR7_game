@@ -14,6 +14,22 @@ automatically -- no code changes required.
 import pygame
 import config as C
 
+TERRAIN_TILE_SIZE = 64
+TERRAIN_TILE_NAMES = (
+    "grass",
+    "path",
+    "stone",
+    "danger",
+    "fire_ground",
+    "silver",
+    "start",
+    "goal",
+)
+
+PIXEL_FONT_CHARS = "0123456789+-=hgf.n"
+PIXEL_GLYPH_W = 11
+PIXEL_GLYPH_H = 15
+
 
 class AssetManager:
     _instance = None
@@ -112,6 +128,99 @@ class AssetManager:
 
     def font_bold(self, size):
         return self.get_font("fonts/pixel_bold.ttf", size)
+
+    # ------------------------------------------------------------------
+    def get_terrain_tile(self, tile_name, size=None):
+        tile_name = tile_name if tile_name in TERRAIN_TILE_NAMES else "grass"
+        key = ("terrain_tile", tile_name, size)
+        if key in self._images:
+            return self._images[key]
+
+        sheet = self.get_image("sprites/environment/terrain_tiles.png")
+        index = TERRAIN_TILE_NAMES.index(tile_name)
+        rect = pygame.Rect(index * TERRAIN_TILE_SIZE, 0, TERRAIN_TILE_SIZE, TERRAIN_TILE_SIZE)
+        if sheet.get_width() >= rect.right and sheet.get_height() >= rect.bottom:
+            tile = sheet.subsurface(rect).copy()
+        else:
+            tile = self._default_placeholder((TERRAIN_TILE_SIZE, TERRAIN_TILE_SIZE), tile_name)
+        if size is not None:
+            tile = pygame.transform.scale(tile, size)
+        self._images[key] = tile
+        return tile
+
+    def get_pixel_glyph(self, char, scale=2):
+        if char == " ":
+            return None
+        char = char if char in PIXEL_FONT_CHARS else "0"
+        scale = max(1, int(scale))
+        key = ("pixel_glyph", char, scale)
+        if key in self._images:
+            return self._images[key]
+
+        sheet = self.get_image("sprites/ui/pixel_numbers.png")
+        index = PIXEL_FONT_CHARS.index(char)
+        rect = pygame.Rect(index * PIXEL_GLYPH_W, 0, PIXEL_GLYPH_W, PIXEL_GLYPH_H)
+        if sheet.get_width() >= rect.right and sheet.get_height() >= rect.bottom:
+            glyph = sheet.subsurface(rect).copy()
+        else:
+            glyph = self._default_placeholder((PIXEL_GLYPH_W, PIXEL_GLYPH_H), char)
+        if scale != 1:
+            glyph = pygame.transform.scale(glyph, (glyph.get_width() * scale, glyph.get_height() * scale))
+        self._images[key] = glyph
+        return glyph
+
+
+def terrain_tile_name(kind, value=None):
+    if kind == "wall":
+        return "stone"
+    if kind == "fire" or (value is not None and value <= -10):
+        return "fire_ground"
+    if kind == "danger" or (value is not None and value < 0):
+        return "danger"
+    if kind == "start":
+        return "start"
+    if kind == "trophy":
+        return "goal"
+    if value == 0 or kind == "path":
+        return "path"
+    if kind == "grass" or (value is not None and value > 0):
+        return "grass"
+    return "silver"
+
+
+def draw_pixel_number(surface, text, pos, scale=2, align="center", spacing=1):
+    am = AssetManager.instance()
+    glyphs = []
+    width = 0
+    height = 0
+    for raw_char in str(text):
+        glyph = am.get_pixel_glyph(raw_char, scale)
+        glyphs.append(glyph)
+        if glyph is None:
+            width += PIXEL_GLYPH_W * scale // 2
+            height = max(height, PIXEL_GLYPH_H * scale)
+        else:
+            width += glyph.get_width()
+            height = max(height, glyph.get_height())
+        width += spacing * scale
+    if glyphs:
+        width -= spacing * scale
+
+    if align == "center":
+        x = int(pos[0] - width / 2)
+        y = int(pos[1] - height / 2)
+    else:
+        x = int(pos[0])
+        y = int(pos[1])
+
+    cursor = x
+    for glyph in glyphs:
+        if glyph is None:
+            cursor += PIXEL_GLYPH_W * scale // 2 + spacing * scale
+            continue
+        surface.blit(glyph, (cursor, y))
+        cursor += glyph.get_width() + spacing * scale
+    return pygame.Rect(x, y, width, height)
 
 
 # ---------------------------------------------------------------------------

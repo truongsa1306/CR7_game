@@ -19,7 +19,7 @@ from systems.algorithms.belief_search import (
     heuristic_components,
     score_state,
 )
-from systems.asset_manager import AssetManager, placeholder_trophy
+from systems.asset_manager import AssetManager, draw_pixel_number, placeholder_trophy, terrain_tile_name
 from systems.audio_manager import AudioManager
 from ui.button import Button, ToggleGroup
 from ui.label import draw_text

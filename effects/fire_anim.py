@@ -1,14 +1,9 @@
-"""
-effects/fire_anim.py
-======================
-Cheap animated fire flicker drawn on top of "fire" cells (-20 cost).
-Mirrors the 4-frame fire_sheet.png described in the asset doc, but
-drawn procedurally (layered flickering triangles) so it works without
-the real sprite sheet.
-"""
-import math
-import random
 import pygame
+
+from systems.asset_manager import AssetManager
+
+FIRE_FRAME_SIZE = 64
+FIRE_FRAME_COUNT = 6
 
 
 class FireAnimator:
@@ -19,18 +14,10 @@ class FireAnimator:
         self.t += dt
 
     def draw(self, surface, rect):
-        cx, cy = rect.centerx, rect.bottom - 6
-        flicker = 0.5 + 0.5 * math.sin(self.t * 10 + rect.x * 0.3)
-        base_h = rect.height * 0.55
-        for i, (color, scale) in enumerate([
-            ((90, 30, 10), 1.0), ((220, 90, 20), 0.75), ((255, 200, 60), 0.45)
-        ]):
-            h = base_h * scale * (0.8 + 0.2 * flicker)
-            w = rect.width * 0.5 * scale
-            sway = math.sin(self.t * 6 + i) * 3
-            points = [
-                (int(cx + sway), int(cy - h)),
-                (int(cx - w / 2), int(cy)),
-                (int(cx + w / 2), int(cy)),
-            ]
-            pygame.draw.polygon(surface, color, points)
+        sheet = AssetManager.instance().get_image("sprites/environment/fire_sheet.png")
+        frame_count = max(1, min(FIRE_FRAME_COUNT, sheet.get_width() // FIRE_FRAME_SIZE))
+        frame_index = int(self.t * 10 + rect.x * 0.03 + rect.y * 0.02) % frame_count
+        frame_rect = pygame.Rect(frame_index * FIRE_FRAME_SIZE, 0, FIRE_FRAME_SIZE, FIRE_FRAME_SIZE)
+        flame = sheet.subsurface(frame_rect).copy()
+        flame = pygame.transform.scale(flame, rect.size)
+        surface.blit(flame, rect.topleft)

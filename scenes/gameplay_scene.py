@@ -23,7 +23,7 @@ from systems.algorithms.hill_climbing import (
     stochastic_hill_climbing_steps,
 )
 from systems.algorithms.informed_search import astar_steps, greedy_steps, ucs_steps
-from systems.asset_manager import AssetManager, placeholder_trophy
+from systems.asset_manager import AssetManager, draw_pixel_number, placeholder_trophy, terrain_tile_name
 from systems.audio_manager import AudioManager
 from ui.button import Button, ToggleGroup
 from ui.dialogue_box import DialogueBox
@@ -1503,7 +1503,11 @@ class GameplayScene(BaseScene):
         ox, oy = rect.left + 7, rect.top + 7
         for (col, row), cell in self.grid.cells.items():
             mini = pygame.Rect(ox + col * cell_w, oy + row * cell_h, cell_w, cell_h)
-            pygame.draw.rect(surface, self._cell_color(cell.kind, cell.value), mini)
+            tile = AssetManager.instance().get_terrain_tile(
+                terrain_tile_name(cell.kind, cell.value),
+                size=mini.size,
+            )
+            surface.blit(tile, mini.topleft)
         draw_text(surface, "path", (rect.centerx, rect.bottom + 3), size=13, color=C.COL_CREAM_TEXT, align="center")
 
     def _draw_grid(self, surface):
@@ -1538,7 +1542,7 @@ class GameplayScene(BaseScene):
                 pygame.draw.rect(surface, C.COL_GOLD_BRIGHT, rect.inflate(-4, -4), 2)
             return
 
-        pygame.draw.rect(surface, self._cell_color(cell.kind, cell.value), rect)
+        self._draw_terrain_tile(surface, rect, cell)
         pygame.draw.rect(surface, (48, 72, 42), rect, 1)
 
         if (
@@ -1577,16 +1581,11 @@ class GameplayScene(BaseScene):
                 h_value = self.grid.heuristic_value(cell.col, cell.row)
                 signed_value = cell.value if cell.value is not None else 0
                 value_label = f"{signed_value:+d}"
-                text_color = C.COL_BLACK if cell.kind in {"path", "start", "trophy"} else C.COL_CREAM_TEXT
-                draw_text(surface, value_label, (rect.centerx, rect.centery - 9), size=17,
-                          color=text_color, align="center")
-                draw_text(surface, f"h={h_value:.0f}", (rect.left + 4, rect.top + 3), size=10,
-                          color=text_color, align="left", shadow=False)
+                draw_pixel_number(surface, value_label, (rect.centerx, rect.centery - 8), scale=1)
+                draw_pixel_number(surface, f"h={h_value:.0f}", (rect.left + 4, rect.top + 3), scale=1, align="left")
             else:
                 label = str(cell.value if cell.value is not None else cell.cost)
-                text_color = C.COL_BLACK if cell.value == 0 else C.COL_CREAM_TEXT
-                draw_text(surface, label, (rect.centerx, rect.centery - 11), size=18,
-                          color=text_color, align="center")
+                draw_pixel_number(surface, label, (rect.centerx, rect.centery - 8), scale=1)
 
         if not cell.revealed and self.game_state.level == 3:
             if pos not in (self.grid.start, self.grid.goal):
@@ -1617,6 +1616,13 @@ class GameplayScene(BaseScene):
 
         if not cell.revealed and self.game_state.level != 3:
             self._overlay(surface, rect, (*C.COL_FOG, 185))
+
+    def _draw_terrain_tile(self, surface, rect, cell):
+        tile = AssetManager.instance().get_terrain_tile(
+            terrain_tile_name(cell.kind, cell.value),
+            size=rect.size,
+        )
+        surface.blit(tile, rect.topleft)
 
     def _draw_choice_arrow(self, surface, pos):
         rect = pygame.Rect(
