@@ -10,6 +10,7 @@ import random
 import pygame
 
 import config as C
+from entities.player import Player
 from scenes.base_scene import BaseScene
 from ui.button import Button
 from ui.label import draw_text
@@ -392,6 +393,9 @@ class EightQueensScene(BaseScene):
         self.hovered_cell = None
         self.selected_cell = None
         self.placed_count = 0
+        self.actor_anim_time = 0.0
+        self.actor_walk_timer = 0.0
+        self.actor_facing = "down"
         self.back_button = Button(pygame.Rect(20, 20, 100, 30), "BACK", font_size=13, on_click=self._go_to_level_select)
         self.prev_button = Button(pygame.Rect(360, 540, 100, 28), "PREV", font_size=14, on_click=self._rewind_ai_step)
         self.run_button = Button(pygame.Rect(480, 540, 100, 28), "RUN", font_size=14, on_click=self._run)
@@ -451,6 +455,9 @@ class EightQueensScene(BaseScene):
                 self.status = "Nhan RESET de quay ve che do tu choi"
 
     def update(self, dt):
+        self.actor_anim_time += dt
+        if self.actor_walk_timer > 0:
+            self.actor_walk_timer = max(0.0, self.actor_walk_timer - dt)
         if self.auto_play and self.steps and not self.done:
             self.step_timer += dt
             if self.step_timer >= AUTO_STEP_DELAY:
@@ -552,14 +559,15 @@ class EightQueensScene(BaseScene):
         y += 22
         for line in self._csp_summary_lines():
             y += draw_text(surface, line, (panel.left + 18, y), size=12, color=C.COL_CREAM_TEXT,
-                           max_width=panel.width - 36, shadow=False)
+                           max_width=panel.width - 150, shadow=False)
 
         y = panel.top + 264
         draw_text(surface, "Trang thai:", (panel.left + 18, y), size=13, color=C.COL_GOLD_BRIGHT)
         draw_text(surface, self.steps[self.step_idx]["status"] if self.steps else self.status,
-                  (panel.left + 18, y + 22), size=13, color=C.COL_CREAM_TEXT, max_width=panel.width - 36)
+                  (panel.left + 18, y + 22), size=13, color=C.COL_CREAM_TEXT, max_width=panel.width - 150)
         draw_text(surface, "PREV/RUN = lui/tien AI, AUTO = tu chay, RESET = xoa ban co",
-                  (panel.left + 18, panel.top + 314), size=11, color=C.COL_CREAM_TEXT, max_width=panel.width - 36)
+                  (panel.left + 18, panel.top + 314), size=11, color=C.COL_CREAM_TEXT, max_width=panel.width - 150)
+        self._draw_actor(surface, panel)
 
     def _draw_size_selector(self, surface, panel):
         draw_text(surface, "So hau:", (panel.left + 18, panel.top + 82), size=13, color=C.COL_GOLD_BRIGHT)
@@ -797,6 +805,8 @@ class EightQueensScene(BaseScene):
         self.selected_cell = None
         self.auto_button.text = "AUTO"
         self.status = "Tu choi: nhan o trong de dat du quan hau"
+        self.actor_walk_timer = 0.0
+        self.actor_facing = "down"
 
     def _toggle_auto(self):
         if self.auto_play:
@@ -838,6 +848,8 @@ class EightQueensScene(BaseScene):
         self.solution_board = self._solution_from_steps()
         self.placed_count = manual_count
         self.auto_button.text = "STOP" if auto_play else "AUTO"
+        self.actor_walk_timer = 0.0
+        self.actor_facing = "down"
         if manual_count:
             self.status = f"AI bat dau tu {manual_count} quan hau ban da dat va se di chuyen khi can"
         else:
@@ -847,8 +859,10 @@ class EightQueensScene(BaseScene):
         self._advance_ai_step()
 
     def _advance_ai_step(self):
+        previous_board = self.current_board.copy()
         self.step_idx = min(self.step_idx + 1, len(self.steps) - 1)
         self.current_board = self.steps[self.step_idx]["board"].copy()
+        self._pulse_actor_for_board_delta(previous_board, self.current_board, fallback="right")
         if self.step_idx >= len(self.steps) - 1:
             self.done = True
             self.auto_play = False
@@ -872,8 +886,10 @@ class EightQueensScene(BaseScene):
             self.current_board = self.steps[0]["board"].copy()
             self.status = "Dang o buoc dau tien cua AI"
             return
+        previous_board = self.current_board.copy()
         self.step_idx -= 1
         self.current_board = self.steps[self.step_idx]["board"].copy()
+        self._pulse_actor_for_board_delta(previous_board, self.current_board, fallback="left")
         self.status = f"Tua lai buoc {self.step_idx}: {self.steps[self.step_idx].get('status', '')}"
 
     def _solution_from_steps(self):
@@ -961,6 +977,7 @@ class EightQueensScene(BaseScene):
         self.current_board[row] = col
         self.placed_count = self._queen_count()
         self.status = f"Da dat hau {self.placed_count}/{self.board_size}"
+        self._pulse_actor("right")
         self._check_player_win()
 
     def _move_selected_queen(self, row, col):
@@ -972,6 +989,7 @@ class EightQueensScene(BaseScene):
         self.current_board[row] = col
         self.selected_cell = (row, col)
         self.status = f"Di chuyen hau tu ({old_row + 1}, {old_col + 1}) den ({row + 1}, {col + 1})"
+        self._pulse_actor_for_move((old_col, old_row), (col, row))
         self._check_player_win()
 
     def _check_player_win(self):
@@ -1013,6 +1031,43 @@ class EightQueensScene(BaseScene):
                     conflicted.add((row, col))
                     conflicted.add((other_row, other_col))
         return conflicted
+
+    def _pulse_actor(self, facing):
+        self.actor_facing = facing
+        self.actor_walk_timer = 0.42
+
+    def _pulse_actor_for_move(self, previous, current):
+        self._pulse_actor(
+            Player.facing_from_delta(
+                current[0] - previous[0],
+                current[1] - previous[1],
+                fallback=self.actor_facing,
+            )
+        )
+
+    def _pulse_actor_for_board_delta(self, previous_board, current_board, fallback="right"):
+        for row, (old_col, new_col) in enumerate(zip(previous_board, current_board)):
+            if old_col == new_col:
+                continue
+            if old_col >= 0 and new_col >= 0:
+                self._pulse_actor_for_move((old_col, row), (new_col, row))
+            elif new_col >= 0:
+                self._pulse_actor(fallback)
+            else:
+                self._pulse_actor("left")
+            return
+        self._pulse_actor(fallback)
+
+    def _draw_actor(self, surface, panel):
+        actor_rect = pygame.Rect(panel.right - 104, panel.top + 142, 78, 122)
+        Player.draw_in_rect(
+            surface,
+            actor_rect,
+            kit_index=max(0, min(self.game_state.kit_index, len(C.KITS) - 1)),
+            state="walk" if self.actor_walk_timer > 0 else "idle",
+            facing=self.actor_facing,
+            anim_time=self.actor_anim_time,
+        )
 
     def _board_rect(self):
         return pygame.Rect(BOARD_X, BOARD_Y, BOARD_SIZE, BOARD_SIZE)

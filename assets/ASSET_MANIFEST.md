@@ -37,6 +37,21 @@ Place the production assets in the paths below.
 - `sprites/characters/cr7_chibi_united.png` - 50x96 multi-frame sprite sheet in red kit.
 - `sprites/characters/cr7_chibi_real.png` - 50x96 multi-frame sprite sheet in white kit.
 - `sprites/characters/cr7_chibi_juve.png` - 50x96 multi-frame sprite sheet in Juventus striped kit.
+- `sprites/characters/cr7_sheet_raw.png` - source CR7 pixel-art sheet before background removal.
+- `sprites/characters/cr7_sheet_transparent.png` - source CR7 pixel-art sheet with transparent background.
+- `sprites/characters/cr7_real_spritesheet.png` - Real Madrid pixel CR7 atlas with idle, walk, run/dribble and SIU celebration frames.
+- `sprites/characters/cr7_juve_spritesheet.png` - Juventus pixel CR7 atlas with idle, wave, walk and kicking frames.
+- `sprites/characters/cr7_juventus_spritesheet.png` - alternate Juventus pixel CR7 atlas copy.
+- `sprites/characters/world_cup_sprite_sheet.png` - World Cup trophy animation atlas.
+- `sprites/characters/cr7_pixel_front.png` - cropped transparent front-facing CR7 sprite for Level 7.
+- `sprites/characters/cr7_pixel_idle_down.png` - transparent pixel CR7 idle frame facing down.
+- `sprites/characters/cr7_pixel_idle_up.png` - transparent pixel CR7 idle frame facing up.
+- `sprites/characters/cr7_pixel_idle_left.png` - transparent pixel CR7 idle frame facing left.
+- `sprites/characters/cr7_pixel_idle_right.png` - transparent pixel CR7 idle frame facing right.
+- `sprites/characters/cr7_pixel_walk_down_0.png`, `cr7_pixel_walk_down_1.png` - transparent pixel CR7 down-walk frames.
+- `sprites/characters/cr7_pixel_walk_up_0.png`, `cr7_pixel_walk_up_1.png` - transparent pixel CR7 up-walk frames.
+- `sprites/characters/cr7_pixel_walk_left_0.png`, `cr7_pixel_walk_left_1.png`, `cr7_pixel_walk_left_2.png` - transparent pixel CR7 left-walk frames.
+- `sprites/characters/cr7_pixel_walk_right_0.png`, `cr7_pixel_walk_right_1.png`, `cr7_pixel_walk_right_2.png` - transparent pixel CR7 right-walk frames.
 
 ### Environment
 

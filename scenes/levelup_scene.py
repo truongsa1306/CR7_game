@@ -55,6 +55,7 @@ class LevelUpScene(CutsceneScene):
         self.elapsed = 0.0
         self.particles.clear()
         self.player.set_kit(new_level)
+        self.player.set_variant(self.player.variant_for_level(new_level))
         self.banner_text = "BAN DA LEN CAP!"
         self.badge_lines = [
             (f"LEVEL: {new_level}", 16, C.COL_CREAM_TEXT),

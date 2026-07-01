@@ -6,6 +6,7 @@ Simple level-selection menu shown right after the intro scene.
 import pygame
 
 import config as C
+from entities.player import Player
 from scenes.base_scene import BaseScene
 from systems.asset_manager import AssetManager, placeholder_trophy
 from ui.button import Button
@@ -17,6 +18,7 @@ class LevelSelectScene(BaseScene):
     def __init__(self, manager, game_state):
         super().__init__(manager, game_state)
         self.buttons = []
+        self.player = Player()
         self.back_button = Button(pygame.Rect(20, 20, 80, 28), "BACK", font_size=12,
                                   on_click=self._go_to_intro)
 
@@ -54,13 +56,16 @@ class LevelSelectScene(BaseScene):
             button.handle_event(event)
 
     def update(self, dt):
-        pass
+        self.player.anim_time += dt
 
     def draw(self, surface):
         surface.fill((20, 24, 20))
         draw_wood_panel(surface, pygame.Rect(120, 62, 784, 450), border=6, corner=10, fill=(58, 35, 24))
         draw_text(surface, "CHON MAN CHOI", (512, 120), size=28, color=C.COL_CREAM_TEXT, align="center")
         draw_text(surface, "Chon man de bat dau", (512, 160), size=16, color=C.COL_CREAM_TEXT, align="center")
+        self.player.set_kit(min(self.game_state.kit_index, max(C.KITS.keys())))
+        self.player.set_variant(Player.variant_for_level(self.game_state.kit_index))
+        self.player.draw_at(surface, (842, 154), size=(42, 80), state="walk", facing="right")
 
         for button in self.buttons:
             button.draw(surface)

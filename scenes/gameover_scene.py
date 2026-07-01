@@ -23,6 +23,7 @@ class GameOverScene(CutsceneScene):
 
     def on_enter(self, **kwargs):
         self.player.set_kit(self.game_state.kit_index)
+        self.player.set_variant(self.player.variant_for_level(self.game_state.level))
         self.banner_text = "GAME OVER"
         self.graph = None
 

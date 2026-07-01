@@ -12,6 +12,7 @@ import random
 import pygame
 
 import config as C
+from entities.player import Player
 from scenes.base_scene import BaseScene
 from ui.button import Button
 from ui.label import draw_text
@@ -314,6 +315,9 @@ class CaroScene(BaseScene):
         self.experiment_results = {}
         self.board_rect = pygame.Rect(0, 0, 0, 0)
         self.cell_size = 1
+        self.actor_anim_time = 0.0
+        self.actor_walk_timer = 0.0
+        self.actor_facing = "down"
 
         self.back_button = Button(
             pygame.Rect(18, 18, 102, 30), "BACK", font_size=13, on_click=self._go_to_level_select
@@ -418,6 +422,7 @@ class CaroScene(BaseScene):
         self.ai_move = None
         self.search_trace = []
         self.best_score = None
+        self._pulse_actor("right")
 
         if check_win(self.board, HUMAN):
             self.winner = HUMAN
@@ -432,7 +437,9 @@ class CaroScene(BaseScene):
             self._ai_play()
 
     def update(self, dt):
-        pass
+        self.actor_anim_time += dt
+        if self.actor_walk_timer > 0:
+            self.actor_walk_timer = max(0.0, self.actor_walk_timer - dt)
 
     def draw(self, surface):
         draw_stadium_background(surface)
@@ -622,6 +629,7 @@ class CaroScene(BaseScene):
             (SIDE_PANEL.left + 14, SIDE_PANEL.top + 116),
             size=11,
             color=C.COL_CREAM_TEXT,
+            max_width=SIDE_PANEL.width - 112,
             shadow=False,
         )
         score_text = "-" if self.best_score is None else self._format_score(self.best_score)
@@ -632,6 +640,7 @@ class CaroScene(BaseScene):
             (SIDE_PANEL.left + 14, SIDE_PANEL.top + 137),
             size=11,
             color=C.COL_GOLD_BRIGHT,
+            max_width=SIDE_PANEL.width - 112,
             shadow=False,
         )
         draw_text(
@@ -640,9 +649,10 @@ class CaroScene(BaseScene):
             (SIDE_PANEL.left + 14, SIDE_PANEL.top + 158),
             size=10,
             color=C.COL_CREAM_TEXT,
-            max_width=SIDE_PANEL.width - 28,
+            max_width=SIDE_PANEL.width - 112,
             shadow=False,
         )
+        self._draw_actor(surface)
 
         self._draw_trace_panel(surface)
         self._draw_experiment_summary(surface)
@@ -782,6 +792,7 @@ class CaroScene(BaseScene):
         self.board[row][col] = AI
         self.ai_move = move
         self.history.append((row, col, AI))
+        self._pulse_actor("left")
 
         if check_win(self.board, AI):
             self.winner = AI
@@ -818,6 +829,8 @@ class CaroScene(BaseScene):
         self.search_trace = []
         self.trace_scroll = 0
         self.experiment_results = {}
+        self.actor_walk_timer = 0.0
+        self.actor_facing = "down"
 
     def _run_experiment(self):
         if self.board is None or self.game_over:
@@ -834,6 +847,8 @@ class CaroScene(BaseScene):
                 "score": score,
             }
         self.status = "Đã so sánh cùng một trạng thái bàn cờ bằng ba thuật toán."
+
+        self._pulse_actor("up")
 
     def _depth_for_algorithm(self, algorithm):
         base_depth = algorithm["depth"]
@@ -865,6 +880,23 @@ class CaroScene(BaseScene):
         self.trace_scroll = 0
         self.experiment_results = {}
         self.status = "Đã hoàn tác. Lượt của bạn."
+
+        self._pulse_actor("down")
+
+    def _pulse_actor(self, facing):
+        self.actor_facing = facing
+        self.actor_walk_timer = 0.42
+
+    def _draw_actor(self, surface):
+        actor_rect = pygame.Rect(SIDE_PANEL.right - 78, SIDE_PANEL.top + 108, 64, 88)
+        Player.draw_in_rect(
+            surface,
+            actor_rect,
+            kit_index=max(0, min(self.game_state.kit_index, len(C.KITS) - 1)),
+            state="walk" if self.actor_walk_timer > 0 else "idle",
+            facing=self.actor_facing,
+            anim_time=self.actor_anim_time,
+        )
 
     @staticmethod
     def _format_move(move):
