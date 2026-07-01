@@ -50,6 +50,7 @@ STATE_GAMEPLAY = "GAMEPLAY"
 STATE_BELIEF = "BELIEF"
 STATE_CARO = "CARO"
 STATE_EIGHT_QUEENS = "EIGHT_QUEENS"
+STATE_AND_OR = "AND_OR"
 STATE_LEVELUP = "LEVELUP"
 STATE_GAMEOVER = "GAMEOVER"
 STATE_VICTORY = "VICTORY"
@@ -98,7 +99,8 @@ LEVEL_NAMES = {
     2: "Leo Nui",
     3: "Tim Kiem Vo Ben",
     4: "Caro Doi Khang",
-    5: "N Quan Hau"
+    5: "N Quan Hau",
+    6: "AND-OR Search"
 }
 
 LEVEL_ALGORITHMS = [
@@ -108,15 +110,17 @@ LEVEL_ALGORITHMS = [
     [ALGO_BFS, ALGO_UCS, ALGO_GREEDY, ALGO_ASTAR, "Hill Climbing", "Steepest Ascent HC", "Stochastic HC"],  # Level 3: uncertainty demo tabs
     [],  # Level 4: Caro adversarial level handled by separate scene
     [],  # Level 5: Eight-Queens handled by separate scene
+    ["AND-OR Search"],  # Level 6: conditional planning under uncertainty
 ]
-LEVEL_GRID_SIZE = [(9, 5), (9, 5), (12, 7), (12, 7), (5, 5), (8, 8)]
+LEVEL_GRID_SIZE = [(9, 5), (9, 5), (12, 7), (12, 7), (5, 5), (8, 8), (7, 5)]
 LEVEL_TITLES = {
     0: "LEVEL 1: TIM KIEM MU",
     1: "LEVEL 2: TIM KIEM THONG TIN",
     2: "LEVEL 3: LEO NUI",
     3: "LEVEL 4: TIM KIEM VO BEN",
     4: "LEVEL 5: CARO DOI KHANG",
-    5: "LEVEL 6: N QUAN HAU"
+    5: "LEVEL 6: N QUAN HAU",
+    6: "LEVEL 7: AND-OR SEARCH"
 }
 
 # Kits (Soccer Uniforms) - CR7 inspired
@@ -139,7 +143,8 @@ LEVEL_INTRO_LINES = {
     2: "Level 3: Hay tim duong di xuong nui. Chi xuat phat tu vi tri cao nhat!",
     3: "Level 4: Co 2 nhom bai toan. Nhom khong quan sat chi co ? va G/CR7; nhom mot phan quan sat co ca so va ?. Bam BELIEF de mo tat ca thanh so.",
     4: "Level 5: doi khang caro. Chon nuoc di va dau AI su dung Minimax/Alpha-Beta/Expectimax!",
-    5: "Level 6: Giai bai toan N quan hau tu 4 den 8 voi Backtracking, Forward Checking va Min-Conflict."
+    5: "Level 6: Giai bai toan N quan hau tu 4 den 8 voi Backtracking, Forward Checking va Min-Conflict.",
+    6: "Level 7: Chon mot hanh dong OR va phai giai tat ca ket qua AND truoc khi CR7 buoc vao o ?."
 }
 
 LEVELUP_LINES = {

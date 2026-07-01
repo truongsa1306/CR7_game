@@ -22,18 +22,29 @@ class LevelSelectScene(BaseScene):
 
     def on_enter(self, **kwargs):
         self.buttons = []
-        panel = pygame.Rect(180, 100, 664, 360)
-        button_w = 220
+        panel = pygame.Rect(140, 90, 744, 390)
+        button_w = 300
         button_h = 48
-        gap = 10
-        start_x = panel.centerx - button_w // 2
+        gap_x = 18
+        gap_y = 12
         levels = sorted(C.LEVEL_NAMES.keys())
-        total_h = len(levels) * button_h + (len(levels) - 1) * gap
-        start_y = panel.top + max(40, (panel.height - total_h) // 2)
+        columns = 2
+        rows = (len(levels) + columns - 1) // columns
+        total_w = columns * button_w + gap_x
+        total_h = rows * button_h + (rows - 1) * gap_y
+        start_x = panel.centerx - total_w // 2
+        start_y = panel.top + max(82, (panel.height - total_h) // 2 + 24)
         for i, level in enumerate(levels):
-            rect = pygame.Rect(start_x, start_y + i * (button_h + gap), button_w, button_h)
+            col = i % columns
+            row = i // columns
+            rect = pygame.Rect(
+                start_x + col * (button_w + gap_x),
+                start_y + row * (button_h + gap_y),
+                button_w,
+                button_h,
+            )
             self.buttons.append(
-                Button(rect, f"Man {level + 1}: {C.LEVEL_NAMES[level]}", font_size=13,
+                Button(rect, f"Màn {level + 1}: {C.LEVEL_NAMES[level]}", font_size=12,
                        on_click=lambda lvl=level: self._start_level(lvl))
             )
 
@@ -47,7 +58,7 @@ class LevelSelectScene(BaseScene):
 
     def draw(self, surface):
         surface.fill((20, 24, 20))
-        draw_wood_panel(surface, pygame.Rect(140, 70, 744, 430), border=6, corner=10, fill=(58, 35, 24))
+        draw_wood_panel(surface, pygame.Rect(120, 62, 784, 450), border=6, corner=10, fill=(58, 35, 24))
         draw_text(surface, "CHON MAN CHOI", (512, 120), size=28, color=C.COL_CREAM_TEXT, align="center")
         draw_text(surface, "Chon man de bat dau", (512, 160), size=16, color=C.COL_CREAM_TEXT, align="center")
 
@@ -59,13 +70,15 @@ class LevelSelectScene(BaseScene):
 
     def _start_level(self, level):
         self.game_state.level = level
-        self.game_state.kit_index = level
+        self.game_state.kit_index = min(level, max(C.KITS.keys()))
         if level == 3:
             self.manager.change(C.STATE_BELIEF)
         elif level == 4:
             self.manager.change(C.STATE_CARO)
         elif level == 5:
             self.manager.change(C.STATE_EIGHT_QUEENS)
+        elif level == 6:
+            self.manager.change(C.STATE_AND_OR)
         else:
             self.manager.change(C.STATE_GAMEPLAY)
 
