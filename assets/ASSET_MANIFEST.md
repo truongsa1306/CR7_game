@@ -56,7 +56,8 @@ Place the production assets in the paths below.
 ### Environment
 
 - `sprites/environment/pitch_tiles.png` - Tile sheet containing light grass, dark grass, and pitch lines.
-- `sprites/environment/fire_sheet.png` - 4-frame fire animation loop for lava/blocked cells.
+- `sprites/environment/terrain_tiles.png` - Pixel terrain atlas for grass, road, stone, danger, fire ground, silver, start, and goal tiles.
+- `sprites/environment/fire_sheet.png` - 6-frame pixel fire animation loop for lava/fire cells.
 - `sprites/environment/obstacle_stone.png` - Flat 3D stone texture block for static grid walls.
 - `sprites/environment/stadium_seat_pattern.png` - Repeating pattern sheet for seating stands in background.
 - `sprites/environment/floodlight_pole.png` - Standing stadium metal truss pole structure.
@@ -71,3 +72,4 @@ Place the production assets in the paths below.
 - `sprites/ui/trophy_worldcup.png` - Golden World Cup trophy sprite with shimmer/spark particles.
 - `sprites/ui/path_arrow.png` - Yellow glow arrows pointing up, down, left, and right.
 - `sprites/ui/gem_currency.png` - Rotating green emerald icon sprite sheet.
+- `sprites/ui/pixel_numbers.png` - Pixel numeric glyph atlas for grid costs, h/g/f labels, and signed cell values.

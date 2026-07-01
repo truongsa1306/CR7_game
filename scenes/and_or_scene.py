@@ -8,11 +8,12 @@ import random
 import pygame
 
 import config as C
+from effects.fire_anim import FireAnimator
 from entities.player import Player
 from entities.grid_cell import GridModel
 from scenes.base_scene import BaseScene
 from systems.algorithms.and_or_search import and_or_graph_search
-from systems.asset_manager import AssetManager, placeholder_trophy
+from systems.asset_manager import AssetManager, draw_pixel_number, placeholder_trophy, terrain_tile_name
 from systems.audio_manager import AudioManager
 from ui.button import Button
 from ui.label import draw_text
@@ -24,18 +25,31 @@ BRANCH_PANEL = pygame.Rect(596, 68, 410, 340)
 TRACE_PANEL = pygame.Rect(18, 416, 988, 144)
 
 ACTION_DATA = {
+    "L": (-1, 0, "TRÁI"),
     "R": (1, 0, "PHẢI"),
     "U": (0, -1, "LÊN"),
     "D": (0, 1, "XUỐNG"),
-    "L": (-1, 0, "TRÁI"),
 }
-ACTION_ORDER = ("R", "U", "D", "L")
+ACTION_ORDER = ("L", "R", "U", "D")
 
 COL_OR = (70, 145, 235)
 COL_AND = (166, 76, 202)
 COL_ACCEPT = (64, 190, 105)
 COL_REJECT = (215, 72, 72)
 COL_DIM = (10, 8, 12, 155)
+
+AND_VARIANTS = {
+    "grass+2": {"label": "Co +2", "kind": "path", "value": 2, "passable": True},
+    "grass-2": {"label": "Co -2", "kind": "danger", "value": -2, "passable": True},
+    "fire-20": {"label": "Lua -20", "kind": "fire", "value": -20, "passable": True},
+    "stone": {"label": "Da chan", "kind": "wall", "value": None, "passable": False},
+}
+
+AND_PROFILES = (
+    ("AN TOAN", ("grass+2", "grass-2")),
+    ("LUA/CO", ("fire-20", "grass+2")),
+    ("CO DA CHAN", ("stone", "grass+2", "fire-20")),
+)
 
 
 class AndOrSearchScene(BaseScene):
@@ -45,12 +59,14 @@ class AndOrSearchScene(BaseScene):
         super().__init__(manager, game_state)
         self.rng = random.Random()
         self.grid = None
+        self.fire = FireAnimator()
         self.start = (1, 3)
         self.goal = (6, 0)
         self.player_pos = self.start
         self.unknown_cells = set()
         self.initial_unknown_cells = set()
-        self.uncertainty = {}
+        self.branch_profiles = {}
+        self.resolved_cells = {}
         self.revealed_unknowns = set()
         self.initial_revealed_unknowns = set()
 
@@ -82,7 +98,11 @@ class AndOrSearchScene(BaseScene):
         self.auto_button = None
         self.random_button = None
         self.return_button = None
+        self.edit_unknown_button = None
+        self.branch_profile_button = None
         self.back_button = None
+        self.selected_unknown = None
+        self.map_cell_rects = {}
 
     def on_enter(self, **kwargs):
         self._build_controls()
@@ -122,6 +142,18 @@ class AndOrSearchScene(BaseScene):
             pygame.Rect(left + (width + gap) * 2, second_y, width, height), "BACK", font_size=10,
             on_click=lambda: self.manager.change(C.STATE_LEVEL_SELECT),
         )
+        third_y = second_y + height + 6
+        edit_w = (BRANCH_PANEL.width - 24 - gap) // 2
+        self.edit_unknown_button = Button(
+            pygame.Rect(left, third_y, edit_w, height), "EDIT ?", font_size=10,
+            on_click=self._cycle_selected_unknown,
+        )
+        self.branch_profile_button = Button(
+            pygame.Rect(left + edit_w + gap, third_y, BRANCH_PANEL.width - 24 - edit_w - gap, height),
+            "AND +",
+            font_size=10,
+            on_click=self._cycle_branch_profile,
+        )
 
     def handle_event(self, event):
         for control in (
@@ -130,9 +162,18 @@ class AndOrSearchScene(BaseScene):
             self.auto_button,
             self.random_button,
             self.return_button,
+            self.edit_unknown_button,
+            self.branch_profile_button,
             self.back_button,
         ):
             control.handle_event(event)
+
+        if event.type == pygame.MOUSEBUTTONDOWN and event.button == 1:
+            for pos, rect in self.map_cell_rects.items():
+                if rect.collidepoint(event.pos) and pos in self.unknown_cells:
+                    self.selected_unknown = pos
+                    self.status_message = f"Da chon o ?: {self._state_name(pos)}. Bam AND + de doi nhanh."
+                    return
 
         if event.type == pygame.KEYDOWN:
             if event.key in (pygame.K_RIGHT, pygame.K_SPACE):
@@ -145,11 +186,16 @@ class AndOrSearchScene(BaseScene):
                 self._randomize_map()
             elif event.key == pygame.K_HOME:
                 self._return_to_start()
+            elif event.key == pygame.K_e:
+                self._cycle_selected_unknown()
+            elif event.key == pygame.K_b:
+                self._cycle_branch_profile()
             elif event.key == pygame.K_ESCAPE:
                 self.manager.change(C.STATE_LEVEL_SELECT)
 
     def update(self, dt):
         self.actor_anim_time += dt
+        self.fire.update(dt)
         if self.actor_walk_timer > 0:
             self.actor_walk_timer = max(0.0, self.actor_walk_timer - dt)
         if not self.auto_play or self.finished:
@@ -167,15 +213,11 @@ class AndOrSearchScene(BaseScene):
         self.actor_facing = "down"
         self.actor_walk_timer = 0.0
 
-        guaranteed_corridor = {
-            (1, 3), (1, 2), (1, 1), (1, 0),
-            (2, 0), (3, 0), (4, 0), (5, 0), (6, 0),
+        demo_corridor = {
+            (1, 3), (1, 2), (1, 1), (2, 1), (3, 1),
+            (4, 1), (5, 1), (6, 1), (6, 0),
         }
-        wall_candidates = [(0, 3), (3, 2), (4, 3), (0, 1), (5, 4)]
-        walls = {(0, 3)}
-        for pos in wall_candidates[1:]:
-            if self.rng.random() < 0.45 and pos not in guaranteed_corridor:
-                walls.add(pos)
+        walls = {(0, 3), (0, 2), (2, 2), (2, 3), (3, 3), (4, 3), (5, 4)}
 
         values = (-4, -2, 0, 2, 4)
         weights = (8, 18, 20, 30, 24)
@@ -195,34 +237,33 @@ class AndOrSearchScene(BaseScene):
             else:
                 cell.kind = "fire"
 
+        for pos in demo_corridor:
+            if pos in self.grid.cells and pos not in (self.start, self.goal):
+                cell = self.grid.get(*pos)
+                cell.kind = "path"
+                cell.value = self.rng.choice((0, 2, 4))
+
         self.grid.set_kind(*self.start, "start")
         self.grid.get(*self.start).value = 2
         self.grid.set_kind(*self.goal, "trophy")
         self.grid.get(*self.goal).value = 0
 
+        required_unknowns = [(1, 2), (3, 1), (5, 1), (4, 2)]
         passable = [
             pos for pos, cell in self.grid.cells.items()
-            if cell.passable and pos not in (self.start, self.goal)
+            if cell.passable and pos not in (self.start, self.goal) and pos not in required_unknowns
         ]
-        required_unknowns = {(2, 3), (1, 2)}
-        extra_candidates = [pos for pos in passable if pos not in required_unknowns]
-        self.rng.shuffle(extra_candidates)
+        self.rng.shuffle(passable)
         self.unknown_cells = set(required_unknowns)
-        self.unknown_cells.update(extra_candidates[:7])
+        self.unknown_cells.update(passable[:3])
         self.initial_unknown_cells = set(self.unknown_cells)
 
-        self.uncertainty = {}
-        for pos in self.unknown_cells:
-            self.uncertainty[pos] = {
-                "risky": self.rng.random() < 0.38,
-                "branches": self.rng.choice((2, 2, 3)),
-            }
-        # The first right action demonstrates rejection; the first upward
-        # action demonstrates a valid AND choice with two possible outcomes.
-        if (2, 3) in self.uncertainty:
-            self.uncertainty[(2, 3)] = {"risky": True, "branches": 2}
-        if (1, 2) in self.uncertainty:
-            self.uncertainty[(1, 2)] = {"risky": False, "branches": 2}
+        self.branch_profiles = {pos: self.rng.randrange(len(AND_PROFILES)) for pos in self.unknown_cells}
+        self.branch_profiles[(1, 2)] = 0
+        self.branch_profiles[(3, 1)] = 0
+        self.branch_profiles[(5, 1)] = 1
+        self.selected_unknown = (1, 2)
+        self.resolved_cells = {}
 
         self.revealed_unknowns = set()
         self.initial_revealed_unknowns = set()
@@ -232,6 +273,7 @@ class AndOrSearchScene(BaseScene):
         previous = self.player_pos
         self.player_pos = self.start
         self._mark_actor_move(previous, self.player_pos)
+        self.resolved_cells = {}
         self.revealed_unknowns = set(self.initial_revealed_unknowns)
         self._reset_search_state("Đã RETURN về Start. Nhấn NEXT hoặc AUTO để giải lại.")
 
@@ -239,7 +281,7 @@ class AndOrSearchScene(BaseScene):
         self.event_queue = []
         self.event_index = 0
         self.current_event = None
-        self.search_state = self.player_pos
+        self.search_state = self._make_state(self.player_pos, self.resolved_cells)
         self.current_action = None
         self.current_outcomes = []
         self.branch_statuses = []
@@ -257,55 +299,90 @@ class AndOrSearchScene(BaseScene):
         self._prepare_decision()
         self._record_history()
 
-    def _is_passable(self, pos):
-        return self.grid.in_bounds(*pos) and self.grid.get(*pos).passable
+    @staticmethod
+    def _make_state(pos, resolved=None):
+        resolved = resolved or {}
+        items = tuple(sorted((cell_pos[0], cell_pos[1], variant) for cell_pos, variant in resolved.items()))
+        return (tuple(pos), items)
+
+    @staticmethod
+    def _state_pos(state):
+        if len(state) == 2 and isinstance(state[0], tuple):
+            return tuple(state[0])
+        return tuple(state)
+
+    @staticmethod
+    def _state_resolved(state):
+        if len(state) != 2 or not isinstance(state[0], tuple):
+            return {}
+        return {(col, row): variant for col, row, variant in state[1]}
+
+    def _resolved_variant(self, pos, resolved):
+        variant = resolved.get(pos)
+        return AND_VARIANTS.get(variant)
+
+    def _is_passable(self, pos, resolved=None):
+        if not self.grid.in_bounds(*pos):
+            return False
+        variant = self._resolved_variant(pos, resolved or {})
+        if variant is not None:
+            return variant["passable"]
+        return self.grid.get(*pos).passable
 
     def _target(self, state, action):
+        pos = self._state_pos(state)
+        resolved = self._state_resolved(state)
         dc, dr, _ = ACTION_DATA[action]
-        target = (state[0] + dc, state[1] + dr)
-        return target if self._is_passable(target) else state
+        target = (pos[0] + dc, pos[1] + dr)
+        return target if self._is_passable(target, resolved) else pos
 
     def _actions_from(self, state):
+        pos = self._state_pos(state)
+        resolved = self._state_resolved(state)
+        order_lookup = {action: index for index, action in enumerate(ACTION_ORDER)}
         candidates = []
-        for order, action in enumerate(ACTION_ORDER):
+        for action in ACTION_ORDER:
+            dc, dr, _ = ACTION_DATA[action]
+            raw_target = (pos[0] + dc, pos[1] + dr)
+            if not self.grid.in_bounds(*raw_target):
+                continue
+            if raw_target in resolved and not self._is_passable(raw_target, resolved):
+                continue
             target = self._target(state, action)
-            if target == state:
+            if target == pos and raw_target not in self.unknown_cells:
                 continue
             h = self.grid.manhattan(target, self.goal)
-            candidates.append((h, order, action))
+            candidates.append((h, order_lookup[action], action))
         candidates.sort()
         return [action for _, _, action in candidates]
 
     def _outcomes(self, state, action):
-        target = self._target(state, action)
-        if target == state:
-            return (state,)
-        if target not in self.unknown_cells or target in self.revealed_unknowns:
-            return (target,)
-
-        profile = self.uncertainty[target]
-        if profile["risky"]:
-            return tuple(dict.fromkeys((target, state)))
-
+        pos = self._state_pos(state)
+        resolved = self._state_resolved(state)
         dc, dr, _ = ACTION_DATA[action]
-        if dc:
-            slips = [(state[0], state[1] - 1), (state[0], state[1] + 1)]
-        else:
-            slips = [(state[0] + 1, state[1]), (state[0] - 1, state[1])]
-        slips = [pos for pos in slips if self._is_passable(pos) and pos != target]
-        slips.sort(key=lambda pos: self.grid.manhattan(pos, self.goal))
-        count = max(1, profile["branches"] - 1)
-        result = [target] + slips[:count]
-        if len(result) == 1:
-            result.append(state)
-        return tuple(dict.fromkeys(result))
+        raw_target = (pos[0] + dc, pos[1] + dr)
+        target = self._target(state, action)
+        if raw_target in self.unknown_cells and raw_target not in resolved:
+            _, variants = AND_PROFILES[self.branch_profiles.get(raw_target, 0)]
+            outcomes = []
+            for variant_id in variants:
+                variant = AND_VARIANTS[variant_id]
+                next_resolved = dict(resolved)
+                next_resolved[raw_target] = variant_id
+                next_pos = raw_target if variant["passable"] else pos
+                outcomes.append(self._make_state(next_pos, next_resolved))
+            return tuple(dict.fromkeys(outcomes))
+        if target == pos:
+            return (self._make_state(pos, resolved),)
+        return (self._make_state(target, resolved),)
 
     def _prepare_decision(self):
         if self.finished:
             return
+        start_state = self._make_state(self.player_pos, self.resolved_cells)
         result = and_or_graph_search(
-            self.player_pos,
-            is_goal=lambda state: state == self.goal,
+            start_state,
+            is_goal=lambda state: self._state_pos(state) == self.goal,
             actions=self._actions_from,
             outcomes=self._outcomes,
             action_name=lambda action: ACTION_DATA[action][2],
@@ -320,12 +397,13 @@ class AndOrSearchScene(BaseScene):
         if result.success and result.plan is not None and result.plan.action is not None:
             action = result.plan.action
             outcomes = tuple(result.plan.branches.keys())
-            intended = self._target(self.player_pos, action)
+            intended = self._target(start_state, action)
             choices = list(outcomes)
-            actual = intended if intended in choices and self.rng.random() < 0.65 else self.rng.choice(choices)
+            passable_choices = [state for state in choices if self._state_pos(state) == intended]
+            actual = self.rng.choice(passable_choices or choices)
             self.event_queue.append({
                 "type": "EXECUTE",
-                "state": self.player_pos,
+                "state": start_state,
                 "action": action,
                 "action_name": ACTION_DATA[action][2],
                 "outcomes": outcomes,
@@ -338,7 +416,7 @@ class AndOrSearchScene(BaseScene):
         else:
             self.event_queue.append({
                 "type": "NO_PLAN",
-                "state": self.player_pos,
+                "state": start_state,
                 "depth": 0,
             })
             self.status_message = "Không tìm được hành động an toàn từ trạng thái hiện tại."
@@ -375,6 +453,36 @@ class AndOrSearchScene(BaseScene):
         self.auto_play = not self.auto_play
         self.auto_timer = 0.0
         self.status_message = "Đang chạy AUTO" if self.auto_play else "Đã tạm dừng"
+
+    def _cycle_selected_unknown(self):
+        if not self.unknown_cells:
+            return
+        ordered = sorted(self.unknown_cells)
+        if self.selected_unknown not in ordered:
+            self.selected_unknown = ordered[0]
+        else:
+            self.selected_unknown = ordered[(ordered.index(self.selected_unknown) + 1) % len(ordered)]
+        self.status_message = f"Chon o ?: {self._state_name(self.selected_unknown)}. {self._selected_profile_label()}"
+
+    def _cycle_branch_profile(self):
+        if self.selected_unknown is None:
+            self._cycle_selected_unknown()
+        if self.selected_unknown is None:
+            return
+        current = self.branch_profiles.get(self.selected_unknown, 0)
+        self.branch_profiles[self.selected_unknown] = (current + 1) % len(AND_PROFILES)
+        self.player_pos = self.start
+        self.resolved_cells = {}
+        self.revealed_unknowns = set()
+        self._reset_search_state(f"Da doi nhanh AND cho o {self._state_name(self.selected_unknown)}.")
+
+    def _selected_profile_label(self):
+        if self.selected_unknown is None:
+            return "EDIT ?: chua chon o nao"
+        profile_index = self.branch_profiles.get(self.selected_unknown, 0)
+        name, variants = AND_PROFILES[profile_index]
+        labels = ", ".join(AND_VARIANTS[variant]["label"] for variant in variants)
+        return f"EDIT {self._state_name(self.selected_unknown)} | {name}: {labels}"
 
     def _apply_event(self, event):
         self.current_event = copy.deepcopy(event)
@@ -444,18 +552,20 @@ class AndOrSearchScene(BaseScene):
 
         elif event_type == "EXECUTE":
             previous = self.player_pos
-            self.player_pos = tuple(event["actual"])
+            actual_state = event["actual"]
+            self.player_pos = self._state_pos(actual_state)
             self._mark_actor_move(previous, self.player_pos)
-            self.search_state = self.player_pos
-            self.revealed_unknowns.add(self.player_pos)
+            self.resolved_cells = self._state_resolved(actual_state)
+            self.search_state = self._make_state(self.player_pos, self.resolved_cells)
+            self.revealed_unknowns.update(self.resolved_cells.keys())
             self.rejected_targets.clear()
             self.accepted_target = None
             self.current_outcomes = list(event.get("outcomes", ()))
-            self.branch_statuses = [
-                "KẾT QUẢ THẬT" if pos == self.player_pos else "ĐÃ CHỨNG MINH"
-                for pos in self.current_outcomes
-            ]
             self._append_trace(event, f"THỰC THI → {self._state_name(self.player_pos)}")
+            self.branch_statuses = [
+                "KET QUA THAT" if outcome == actual_state else "DA CHUNG MINH"
+                for outcome in self.current_outcomes
+            ]
             if self.player_pos == self.goal:
                 self.finished = True
                 self.auto_play = False
@@ -506,6 +616,9 @@ class AndOrSearchScene(BaseScene):
     def _snapshot(self):
         return {
             "player_pos": self.player_pos,
+            "resolved_cells": dict(self.resolved_cells),
+            "branch_profiles": dict(self.branch_profiles),
+            "selected_unknown": self.selected_unknown,
             "revealed_unknowns": set(self.revealed_unknowns),
             "event_queue": copy.deepcopy(self.event_queue),
             "event_index": self.event_index,
@@ -535,6 +648,9 @@ class AndOrSearchScene(BaseScene):
         snapshot = self.history[index]
         self.history_cursor = index
         self.player_pos = tuple(snapshot["player_pos"])
+        self.resolved_cells = dict(snapshot.get("resolved_cells", {}))
+        self.branch_profiles = dict(snapshot.get("branch_profiles", self.branch_profiles))
+        self.selected_unknown = snapshot.get("selected_unknown", self.selected_unknown)
         self.revealed_unknowns = set(snapshot["revealed_unknowns"])
         self.event_queue = copy.deepcopy(snapshot["event_queue"])
         self.event_index = snapshot["event_index"]
@@ -556,6 +672,14 @@ class AndOrSearchScene(BaseScene):
 
     @staticmethod
     def _state_name(state):
+        if len(state) == 2 and isinstance(state[0], tuple):
+            pos = state[0]
+            items = state[1]
+            if items:
+                col, row, variant_id = items[-1]
+                label = AND_VARIANTS.get(variant_id, {}).get("label", variant_id)
+                return f"({pos[0]},{pos[1]}) [?{col},{row}={label}]"
+            return f"({pos[0]},{pos[1]})"
         return f"({state[0]},{state[1]})"
 
     def _mark_actor_move(self, previous, current):
@@ -603,16 +727,18 @@ class AndOrSearchScene(BaseScene):
         grid_h = cell_size * self.grid.rows
         origin = (grid_area.centerx - grid_w // 2, grid_area.centery - grid_h // 2)
 
-        active = {self.player_pos, self.search_state, self.goal}
-        active.update(self.current_outcomes)
+        active = {self.player_pos, self._state_pos(self.search_state), self.goal}
+        active.update(self._state_pos(outcome) for outcome in self.current_outcomes)
         if self.current_action:
             active.add(self._target(self.search_state, self.current_action))
 
+        self.map_cell_rects = {}
         for row in range(self.grid.rows):
             for col in range(self.grid.cols):
                 pos = (col, row)
                 rect = pygame.Rect(origin[0] + col * cell_size, origin[1] + row * cell_size,
                                    cell_size, cell_size)
+                self.map_cell_rects[pos] = rect
                 self._draw_cell(surface, rect, pos, active)
 
         draw_text(surface, "Vàng: node  Xanh dương: OR  Tím: AND  Xanh: nhận  Đỏ: loại",
@@ -621,9 +747,10 @@ class AndOrSearchScene(BaseScene):
 
     def _draw_cell(self, surface, rect, pos, active):
         cell = self.grid.get(*pos)
-        if cell.kind == "wall":
+        kind, value = self._visual_kind_value(pos)
+        if kind == "wall":
             base = C.COL_WALL_STONE
-        elif cell.kind == "trophy":
+        elif kind == "trophy":
             base = (210, 184, 96)
         elif cell.kind == "start":
             base = (244, 218, 126)
@@ -637,13 +764,18 @@ class AndOrSearchScene(BaseScene):
             base = (122, 52, 39)
 
         pygame.draw.rect(surface, base, rect)
+        tile = AssetManager.instance().get_terrain_tile(
+            terrain_tile_name(kind, value),
+            size=rect.size,
+        )
+        surface.blit(tile, rect.topleft)
         pygame.draw.rect(surface, (48, 58, 42), rect, 2)
 
         hidden = pos in self.unknown_cells and pos not in self.revealed_unknowns
-        if cell.kind == "wall":
+        if kind == "wall":
             draw_text(surface, "×", rect.center, size=max(13, rect.height // 2),
                       color=C.COL_CREAM_TEXT, align="center", shadow=False)
-        elif cell.kind == "trophy":
+        elif kind == "trophy":
             trophy = AssetManager.instance().get_image(
                 "sprites/ui/trophy_worldcup.png",
                 size=(int(rect.width * 0.56), int(rect.height * 0.62)),
@@ -653,19 +785,23 @@ class AndOrSearchScene(BaseScene):
         elif hidden:
             draw_text(surface, "?", rect.center, size=max(17, rect.height // 2),
                       color=C.COL_BLACK, align="center", shadow=False)
-        elif cell.value is not None:
-            color = C.COL_BLACK if cell.value >= 0 else C.COL_CREAM_TEXT
-            draw_text(surface, f"{cell.value:+d}",
-                      (rect.centerx, rect.centery - max(5, rect.height // 8)),
-                      size=max(12, min(18, rect.height // 3)), color=color,
-                      align="center")
+        elif kind == "fire":
+            self.fire.draw(surface, rect.inflate(-max(6, rect.width // 7), -max(5, rect.height // 8)))
+            if value is not None:
+                draw_pixel_number(surface, f"{value:+d}",
+                                  (rect.centerx, rect.centery - max(4, rect.height // 10)),
+                                  scale=1)
+        elif value is not None and kind not in ("start", "trophy"):
+            draw_pixel_number(surface, f"{value:+d}",
+                              (rect.centerx, rect.centery - max(4, rect.height // 10)),
+                              scale=1)
 
         if self.current_event is not None and pos not in active:
             overlay = pygame.Surface(rect.size, pygame.SRCALPHA)
             overlay.fill(COL_DIM)
             surface.blit(overlay, rect.topleft)
 
-        if pos in self.current_outcomes:
+        if any(pos == self._state_pos(outcome) for outcome in self.current_outcomes):
             pygame.draw.rect(surface, COL_AND, rect.inflate(-5, -5), 4, border_radius=5)
         if self.current_action and pos == self._target(self.search_state, self.current_action):
             pygame.draw.rect(surface, COL_OR, rect.inflate(-3, -3), 3, border_radius=5)
@@ -674,11 +810,21 @@ class AndOrSearchScene(BaseScene):
             pygame.draw.line(surface, COL_REJECT, rect.topright, rect.bottomleft, 5)
         if pos == self.accepted_target:
             pygame.draw.rect(surface, COL_ACCEPT, rect.inflate(-4, -4), 5, border_radius=5)
-        if pos == self.search_state:
+        if pos == self._state_pos(self.search_state):
             pygame.draw.rect(surface, C.COL_GOLD_BRIGHT, rect.inflate(-7, -7), 3, border_radius=4)
+        if pos == self.selected_unknown:
+            pygame.draw.rect(surface, C.COL_GOLD_BRIGHT, rect.inflate(-2, -2), 3, border_radius=4)
 
         if pos == self.player_pos:
             self._draw_character(surface, rect, at_goal=pos == self.goal)
+
+    def _visual_kind_value(self, pos, resolved=None):
+        resolved = self.resolved_cells if resolved is None else resolved
+        variant = self._resolved_variant(pos, resolved)
+        if variant is not None:
+            return variant["kind"], variant["value"]
+        cell = self.grid.get(*pos)
+        return cell.kind, cell.value
 
     def _draw_character(self, surface, rect, at_goal=False):
         kit_index = max(0, min(self.game_state.kit_index, len(C.KITS) - 1))
@@ -700,19 +846,24 @@ class AndOrSearchScene(BaseScene):
         for control in (
             self.prev_button, self.next_button, self.auto_button,
             self.random_button, self.return_button, self.back_button,
+            self.edit_unknown_button, self.branch_profile_button,
         ):
             control.draw(surface)
 
+        draw_text(surface, self._selected_profile_label(),
+                  (BRANCH_PANEL.left + 14, BRANCH_PANEL.top + 88), size=8,
+                  color=C.COL_GOLD_BRIGHT, shadow=False,
+                  max_width=BRANCH_PANEL.width - 28)
         draw_text(surface, self.status_message,
-                  (BRANCH_PANEL.left + 14, BRANCH_PANEL.top + 78), size=9,
+                  (BRANCH_PANEL.left + 14, BRANCH_PANEL.top + 104), size=9,
                   color=C.COL_CREAM_TEXT, shadow=False,
                   max_width=BRANCH_PANEL.width - 28)
-        draw_text(surface, f"OR nodes đã mở: {self.expanded}",
-                  (BRANCH_PANEL.right - 14, BRANCH_PANEL.top + 103), size=9,
+        draw_text(surface, f"OR nodes da mo: {self.expanded}",
+                  (BRANCH_PANEL.right - 14, BRANCH_PANEL.top + 118), size=8,
                   color=C.COL_GOLD_BRIGHT, align="right", shadow=False)
 
-        branch_area = pygame.Rect(BRANCH_PANEL.left + 10, BRANCH_PANEL.top + 124,
-                                  BRANCH_PANEL.width - 20, BRANCH_PANEL.height - 136)
+        branch_area = pygame.Rect(BRANCH_PANEL.left + 10, BRANCH_PANEL.top + 140,
+                                  BRANCH_PANEL.width - 20, BRANCH_PANEL.height - 152)
         if not self.current_outcomes:
             draw_text(surface, "CHƯA CÓ NHÁNH AND",
                       (branch_area.centerx, branch_area.top + 30), size=15,
@@ -747,6 +898,8 @@ class AndOrSearchScene(BaseScene):
         return rects
 
     def _draw_mini_world(self, surface, panel, outcome, index, status):
+        outcome_pos = self._state_pos(outcome)
+        outcome_resolved = self._state_resolved(outcome)
         if status == "THÀNH CÔNG":
             border = COL_ACCEPT
         elif status == "THẤT BẠI":
@@ -761,7 +914,11 @@ class AndOrSearchScene(BaseScene):
                   (panel.centerx, panel.top + 3), size=8, color=border,
                   align="center", shadow=False)
 
-        top = panel.top + 20
+        draw_text(surface, self._state_name(outcome),
+                  (panel.centerx, panel.top + 12), size=7, color=C.COL_CREAM_TEXT,
+                  align="center", shadow=False, max_width=panel.width - 8)
+
+        top = panel.top + 25
         cell_size = min((panel.width - 8) // self.grid.cols,
                         max(5, (panel.height - 25) // self.grid.rows))
         grid_w = self.grid.cols * cell_size
@@ -772,6 +929,7 @@ class AndOrSearchScene(BaseScene):
             for col in range(self.grid.cols):
                 pos = (col, row)
                 cell = self.grid.get(col, row)
+                kind, value = self._visual_kind_value(pos, outcome_resolved)
                 rect = pygame.Rect(ox + col * cell_size, oy + row * cell_size, cell_size, cell_size)
                 if cell.kind == "wall":
                     color = C.COL_WALL_STONE
@@ -786,8 +944,22 @@ class AndOrSearchScene(BaseScene):
                 else:
                     color = (157, 73, 67)
                 pygame.draw.rect(surface, color, rect)
+                tile = AssetManager.instance().get_terrain_tile(
+                    terrain_tile_name(kind, value),
+                    size=rect.size,
+                )
+                surface.blit(tile, rect.topleft)
                 pygame.draw.rect(surface, (50, 48, 42), rect, 1)
-                if pos == outcome:
+                hidden = pos in self.unknown_cells and pos not in outcome_resolved
+                if hidden:
+                    draw_text(surface, "?", rect.center, size=max(7, cell_size // 2),
+                              color=C.COL_BLACK, align="center", shadow=False)
+                elif kind == "wall":
+                    draw_text(surface, "x", rect.center, size=max(7, cell_size // 2),
+                              color=C.COL_CREAM_TEXT, align="center", shadow=False)
+                elif value is not None and cell_size >= 16 and kind not in ("start", "trophy"):
+                    draw_pixel_number(surface, f"{value:+d}", rect.center, scale=1)
+                if pos == outcome_pos:
                     pygame.draw.rect(surface, COL_AND, rect.inflate(-1, -1), 2)
                 if pos == self.goal:
                     pygame.draw.circle(surface, C.COL_GOLD_BRIGHT, rect.center,
