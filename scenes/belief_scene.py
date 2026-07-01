@@ -9,6 +9,7 @@ import pygame
 
 import config as C
 from entities.grid_cell import GridModel
+from entities.player import Player
 from scenes.base_scene import BaseScene
 from systems.algorithms.belief_search import (
     BLIND,
@@ -18,7 +19,7 @@ from systems.algorithms.belief_search import (
     heuristic_components,
     score_state,
 )
-from systems.asset_manager import AssetManager, placeholder_chibi, placeholder_trophy
+from systems.asset_manager import AssetManager, placeholder_trophy
 from systems.audio_manager import AudioManager
 from ui.button import Button, ToggleGroup
 from ui.label import draw_text
@@ -62,6 +63,9 @@ class BeliefSearchScene(BaseScene):
         self.history = []
         self.history_cursor = -1
         self.completed_worlds = set()
+        self.actor_anim_time = 0.0
+        self.actor_walk_timer = 0.0
+        self.actor_facing = "down"
         self.status_message = "Chọn số lượng rồi nhấn RANDOM hoặc BELIEF +"
 
         self.mode_toggle = None
@@ -90,6 +94,9 @@ class BeliefSearchScene(BaseScene):
         self.history = []
         self.history_cursor = -1
         self.completed_worlds = set()
+        self.actor_anim_time = 0.0
+        self.actor_walk_timer = 0.0
+        self.actor_facing = "down"
         self.status_message = "Đang tạo tập belief ban đầu..."
         self._build_controls()
         self._randomize_preview()
@@ -212,6 +219,9 @@ class BeliefSearchScene(BaseScene):
                 self._back_to_level_select()
 
     def update(self, dt):
+        self.actor_anim_time += dt
+        if self.actor_walk_timer > 0:
+            self.actor_walk_timer = max(0.0, self.actor_walk_timer - dt)
         has_recorded_future = self.history_cursor < len(self.history) - 1
         if not self.auto_play or ((self.generator is None or self.finished) and not has_recorded_future):
             return
@@ -284,6 +294,8 @@ class BeliefSearchScene(BaseScene):
         self.history = []
         self.history_cursor = -1
         self.completed_worlds = set()
+        self.actor_walk_timer = 0.0
+        self.actor_facing = "down"
         self.status_message = message
 
     def _belief_revealed(self):
@@ -303,6 +315,9 @@ class BeliefSearchScene(BaseScene):
         self.finished = False
         self.history = []
         self.history_cursor = -1
+        self.completed_worlds = set()
+        self.actor_walk_timer = 0.0
+        self.actor_facing = "down"
         if self.observation_mode == 0:
             self.status_message = (
                 f"Đã tạo S={{{', '.join(f'M{i + 1}' for i in range(self.belief_count))}}} ở chế độ không quan sát. "
@@ -417,6 +432,8 @@ class BeliefSearchScene(BaseScene):
         self.step_timer = 0.0
         self.status_message = f"{self.algorithm_name} đã sẵn sàng."
         self.completed_worlds = {i for i, (world, pos) in enumerate(zip(self.worlds, self.current_state)) if pos == world["grid"].goal}
+        self.actor_facing = "down"
+        self.actor_walk_timer = 0.0
         self.history = []
         self.history_cursor = -1
         self._record_history()
@@ -448,6 +465,7 @@ class BeliefSearchScene(BaseScene):
             return
 
         self.last_step = step
+        previous_state = tuple(self.current_state)
         raw_state = tuple(step.get("display_state", step.get("current_state", self.current_state)))
         frozen_state = []
         for idx, (world, pos) in enumerate(zip(self.worlds, raw_state)):
@@ -458,6 +476,7 @@ class BeliefSearchScene(BaseScene):
             else:
                 frozen_state.append(pos)
         self.current_state = tuple(frozen_state)
+        self._mark_actor_move(previous_state, self.current_state)
         if step.get("selected_score") is not None and self.current_state == tuple(step.get("next_state", ())):
             self.current_score = step["selected_score"]
         elif step.get("score") is not None:
@@ -516,6 +535,7 @@ class BeliefSearchScene(BaseScene):
             "finished": self.finished,
             "status_message": self.status_message,
             "completed_worlds": set(self.completed_worlds),
+            "actor_facing": self.actor_facing,
         }
         self.history.append(snapshot)
         self.history_cursor = len(self.history) - 1
@@ -532,6 +552,8 @@ class BeliefSearchScene(BaseScene):
         self.finished = snapshot["finished"]
         self.status_message = snapshot["status_message"]
         self.completed_worlds = set(snapshot.get("completed_worlds", set()))
+        self.actor_facing = snapshot.get("actor_facing", self.actor_facing)
+        self.actor_walk_timer = 0.0
         self.auto_play = False
 
     def _trace_row(self, step):
@@ -613,6 +635,19 @@ class BeliefSearchScene(BaseScene):
     @staticmethod
     def _number(value):
         return str(int(value)) if float(value).is_integer() else f"{value:.1f}"
+
+    def _mark_actor_move(self, previous_state, current_state):
+        for previous, current in zip(previous_state, current_state):
+            if previous == current:
+                continue
+            self.actor_facing = Player.facing_from_delta(
+                current[0] - previous[0],
+                current[1] - previous[1],
+                fallback=self.actor_facing,
+            )
+            self.actor_walk_timer = 0.38
+            return
+        self.actor_walk_timer = 0.0
 
     # ------------------------------------------------------------------
     # Drawing
@@ -765,18 +800,15 @@ class BeliefSearchScene(BaseScene):
 
     def _draw_character(self, surface, rect, at_goal=False):
         kit_index = max(0, min(self.game_state.kit_index, len(C.KITS) - 1))
-        kit = C.KITS[kit_index]
-        sprite_h = max(18, int(rect.height * (0.54 if at_goal else 0.72)))
-        sprite_w = max(10, int(sprite_h * 50 / 96))
-        sprite = AssetManager.instance().get_image(
-            f"sprites/characters/cr7_chibi_{kit['name']}.png",
-            size=(sprite_w, sprite_h),
-            placeholder=lambda size: placeholder_chibi(size, kit["color"]),
+        Player.draw_in_rect(
+            surface,
+            rect,
+            kit_index=kit_index,
+            state="walk" if self.actor_walk_timer > 0 else "idle",
+            facing=self.actor_facing,
+            anim_time=self.actor_anim_time,
+            at_goal=at_goal,
         )
-        anchor_x = rect.right - max(3, rect.width // 8) if at_goal else rect.centerx
-        anchor_y = rect.bottom - max(2, rect.height // 18)
-        actor_rect = sprite.get_rect(midbottom=(anchor_x, anchor_y))
-        surface.blit(sprite, actor_rect)
 
     @staticmethod
     def _draw_level_two_value(surface, rect, cell):

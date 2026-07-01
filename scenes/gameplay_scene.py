@@ -283,6 +283,7 @@ class GameplayScene(BaseScene):
         self.hill_status_message = ""
         self.hill_path_history = []
         self.search_start_pos = None
+        self.celebration_timer = 0.0
 
     def on_enter(self, **kwargs):
         if self.game_state.level == 4:
@@ -290,11 +291,13 @@ class GameplayScene(BaseScene):
             return
 
         self.finished = False
+        self.celebration_timer = 0.0
         self.auto_play = True
         self.step_timer = 0.0
         self.depth_limit = None
         self.restarting = False
         self.player.set_kit(self.game_state.kit_index)
+        self.player.set_variant(Player.variant_for_level(self.game_state.level))
         self.dialogue.set_text(C.LEVEL_INTRO_LINES[self.game_state.level], kit_index=self.game_state.kit_index)
 
         level_algorithms = C.LEVEL_ALGORITHMS[self.game_state.level]
@@ -359,6 +362,12 @@ class GameplayScene(BaseScene):
         self.dialogue.update(dt)
         self.player.update(dt)
         self.fire.update(dt)
+
+        if self.celebration_timer > 0:
+            self.celebration_timer = max(0.0, self.celebration_timer - dt)
+            if self.celebration_timer == 0.0:
+                self._complete_level_transition()
+            return
 
         if self.follow_path and not self.player.is_moving:
             next_pos = self.follow_path.pop(0)
@@ -720,6 +729,7 @@ class GameplayScene(BaseScene):
             self._randomize_hill_matrix(self.grid)
             self._apply_hill_climbing_h_values(self.grid)
         self.grid_rect, self.cell_size = self._grid_geometry(self.grid.cols, self.grid.rows)
+        self.player.set_variant(Player.variant_for_level(self.game_state.level))
         self.player.place_at_grid(*self.grid.start, self.grid_rect.topleft, self.cell_size)
         if self.game_state.level not in {0, 2, 3}:
             self.grid.reveal_around(*self.grid.start, radius=1)
@@ -736,6 +746,7 @@ class GameplayScene(BaseScene):
         self.restarting = False
         self.algorithm_health = self.game_state.current_health
         self.finished = False
+        self.celebration_timer = 0.0
         self.auto_play = False
         self.step_timer = 0.0
         self.searching = False
@@ -1440,7 +1451,21 @@ class GameplayScene(BaseScene):
         return True
 
     def _finish_level(self):
+        if self.finished:
+            return
         self.finished = True
+        if self.game_state.level in {0, 1, 2}:
+            self.auto_play = False
+            self.searching = False
+            self.follow_path = []
+            self.player.celebrate()
+            self.celebration_timer = 1.65
+            AudioManager.instance().play_sfx("siuuu", volume=0.85)
+            self.dialogue.set_status("SIUUU! CR7 da cham cup, chuan bi sang man tiep theo.")
+            return
+        self._complete_level_transition()
+
+    def _complete_level_transition(self):
         if self.game_state.level >= max(C.LEVEL_NAMES.keys()):
             self.manager.change(C.STATE_VICTORY)
             return

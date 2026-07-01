@@ -8,10 +8,11 @@ import random
 import pygame
 
 import config as C
+from entities.player import Player
 from entities.grid_cell import GridModel
 from scenes.base_scene import BaseScene
 from systems.algorithms.and_or_search import and_or_graph_search
-from systems.asset_manager import AssetManager, placeholder_chibi, placeholder_trophy
+from systems.asset_manager import AssetManager, placeholder_trophy
 from systems.audio_manager import AudioManager
 from ui.button import Button
 from ui.label import draw_text
@@ -69,6 +70,9 @@ class AndOrSearchScene(BaseScene):
         self.auto_play = False
         self.auto_timer = 0.0
         self.status_message = ""
+        self.actor_anim_time = 0.0
+        self.actor_walk_timer = 0.0
+        self.actor_facing = "down"
 
         self.history = []
         self.history_cursor = -1
@@ -145,6 +149,9 @@ class AndOrSearchScene(BaseScene):
                 self.manager.change(C.STATE_LEVEL_SELECT)
 
     def update(self, dt):
+        self.actor_anim_time += dt
+        if self.actor_walk_timer > 0:
+            self.actor_walk_timer = max(0.0, self.actor_walk_timer - dt)
         if not self.auto_play or self.finished:
             return
         self.auto_timer += dt
@@ -157,6 +164,8 @@ class AndOrSearchScene(BaseScene):
     def _randomize_map(self):
         self.grid = GridModel(7, 5, self.start, self.goal, fog=False)
         self.player_pos = self.start
+        self.actor_facing = "down"
+        self.actor_walk_timer = 0.0
 
         guaranteed_corridor = {
             (1, 3), (1, 2), (1, 1), (1, 0),
@@ -220,7 +229,9 @@ class AndOrSearchScene(BaseScene):
         self._reset_search_state("Bản đồ mới: ô ? chỉ được chọn khi mọi nhánh AND đều tới Goal.")
 
     def _return_to_start(self):
+        previous = self.player_pos
         self.player_pos = self.start
+        self._mark_actor_move(previous, self.player_pos)
         self.revealed_unknowns = set(self.initial_revealed_unknowns)
         self._reset_search_state("Đã RETURN về Start. Nhấn NEXT hoặc AUTO để giải lại.")
 
@@ -434,6 +445,7 @@ class AndOrSearchScene(BaseScene):
         elif event_type == "EXECUTE":
             previous = self.player_pos
             self.player_pos = tuple(event["actual"])
+            self._mark_actor_move(previous, self.player_pos)
             self.search_state = self.player_pos
             self.revealed_unknowns.add(self.player_pos)
             self.rejected_targets.clear()
@@ -509,6 +521,7 @@ class AndOrSearchScene(BaseScene):
             "expanded": self.expanded,
             "finished": self.finished,
             "status_message": self.status_message,
+            "actor_facing": self.actor_facing,
         }
 
     def _record_history(self):
@@ -537,11 +550,24 @@ class AndOrSearchScene(BaseScene):
         self.expanded = snapshot["expanded"]
         self.finished = snapshot["finished"]
         self.status_message = snapshot["status_message"]
+        self.actor_facing = snapshot.get("actor_facing", self.actor_facing)
+        self.actor_walk_timer = 0.0
         self.auto_play = False
 
     @staticmethod
     def _state_name(state):
         return f"({state[0]},{state[1]})"
+
+    def _mark_actor_move(self, previous, current):
+        if previous == current:
+            self.actor_walk_timer = 0.0
+            return
+        self.actor_facing = Player.facing_from_delta(
+            current[0] - previous[0],
+            current[1] - previous[1],
+            fallback=self.actor_facing,
+        )
+        self.actor_walk_timer = 0.38
 
     # ------------------------------------------------------------------
     # Drawing
@@ -652,17 +678,19 @@ class AndOrSearchScene(BaseScene):
             pygame.draw.rect(surface, C.COL_GOLD_BRIGHT, rect.inflate(-7, -7), 3, border_radius=4)
 
         if pos == self.player_pos:
-            self._draw_character(surface, rect)
+            self._draw_character(surface, rect, at_goal=pos == self.goal)
 
-    def _draw_character(self, surface, rect):
-        sprite_h = max(22, int(rect.height * 0.72))
-        sprite_w = max(12, int(sprite_h * 50 / 96))
-        sprite = AssetManager.instance().get_image(
-            "sprites/characters/cr7_chibi_real.png",
-            size=(sprite_w, sprite_h),
-            placeholder=lambda size: placeholder_chibi(size, (245, 245, 245)),
+    def _draw_character(self, surface, rect, at_goal=False):
+        kit_index = max(0, min(self.game_state.kit_index, len(C.KITS) - 1))
+        Player.draw_in_rect(
+            surface,
+            rect,
+            kit_index=kit_index,
+            state="walk" if self.actor_walk_timer > 0 else "idle",
+            facing=self.actor_facing,
+            anim_time=self.actor_anim_time,
+            at_goal=at_goal,
         )
-        surface.blit(sprite, sprite.get_rect(midbottom=(rect.centerx, rect.bottom - 3)))
 
     def _draw_branch_panel(self, surface):
         draw_wood_panel(surface, BRANCH_PANEL, border=5, corner=8, fill=(54, 32, 24))
