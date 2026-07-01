@@ -97,7 +97,9 @@ class LevelUpScene(CutsceneScene):
         self.manager.change(C.STATE_LEVEL_SELECT)
 
     def _go_to_gameplay(self):
-        if self.game_state.level == 4:
+        if self.game_state.level == 3:
+            self.manager.change(C.STATE_BELIEF)
+        elif self.game_state.level == 4:
             self.manager.change(C.STATE_CARO)
         elif self.game_state.level == 5:
             self.manager.change(C.STATE_EIGHT_QUEENS)

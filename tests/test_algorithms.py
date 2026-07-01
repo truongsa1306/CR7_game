@@ -166,11 +166,12 @@ class TestDFS(unittest.TestCase):
     def test_frontier_uses_lifo_order(self):
         g = make_grid(3, 3, (0, 0), (2, 2))
         step = next(dfs_steps(g))
-        # Ở (0,0), các láng giềng orthogonal là (1,0) rồi (0,1);
-        # stack nên pop (0,1) trước vì nó được push sau.
+        # Children are generated L, R, U, D. DFS stores them in reverse so the
+        # next popped node still follows that generated order.
         self.assertEqual(step["current"], (0, 0))
-        self.assertEqual(step["frontier"][-1], (0, 1))
-        self.assertEqual(step["frontier"][0], (1, 0))
+        self.assertEqual(step["children"], [(1, 0), (0, 1)])
+        self.assertEqual(step["frontier"][-1], (1, 0))
+        self.assertEqual(step["frontier"][0], (0, 1))
 
     def test_goal_none_exhaustive(self):
         g = make_grid(3, 3, (0, 0), goal=None)
@@ -197,6 +198,19 @@ class TestIDS(unittest.TestCase):
         self.assertIn("depth_limit", step)
         self.assertIsInstance(step["depth_limit"], int)
 
+    def test_frontier_keeps_lrud_pop_order(self):
+        g = make_grid(3, 3, (1, 1), (2, 2))
+        step = None
+        for candidate in ids_steps(g, max_depth=1):
+            if candidate.get("depth_limit") == 1 and candidate["current"] == g.start:
+                step = candidate
+                break
+        self.assertIsNotNone(step)
+        expected = [(0, 1), (2, 1), (1, 0), (1, 2)]
+        self.assertEqual(step["children"], expected)
+        self.assertEqual(step["added_children"], expected)
+        self.assertEqual(step["frontier"][-1], expected[0])
+
     def test_overall_visited_accumulates(self):
         g = make_grid(3, 3, (0, 0), (2, 2))
         last = drain(ids_steps(g))
@@ -219,6 +233,18 @@ class TestUCS(unittest.TestCase):
         drain(ucs_steps(g))
         # Ô start phải có g=0
         self.assertEqual(g.get(0, 0).g, 0)
+
+    def test_g_is_negative_cumulative_cell_value(self):
+        g = make_grid(3, 3, (0, 0), (2, 2))
+        g.get(1, 0).value = 8
+        step = next(ucs_steps(g, health=10))
+        self.assertEqual(step["scores"][(1, 0)]["g"], -8)
+
+    def test_ucs_health_gate_blocks_unaffordable_nodes(self):
+        g = make_grid(3, 3, (0, 0), (2, 2))
+        g.get(1, 0).value = -5
+        step = next(ucs_steps(g, health=2))
+        self.assertNotIn((1, 0), step["frontier"])
 
     def test_goal_none_exhaustive(self):
         g = make_grid(3, 3, (0, 0), goal=None)
@@ -265,19 +291,19 @@ class TestGreedy(unittest.TestCase):
     def test_h_scores_written(self):
         g = make_grid(3, 3, (0, 0), (2, 2))
         drain(greedy_steps(g))
-        # Ô start: h ban đầu được đặt là 20 theo quy ước mới
-        self.assertEqual(g.get(0, 0).h, 20)
+        # h(n) is raw Manhattan distance to the goal.
+        self.assertEqual(g.get(0, 0).h, 4)
 
     def test_heuristic_accounts_for_negative_cell_value(self):
         g = make_grid(3, 3, (0, 0), (2, 2))
         g.get(1, 0).value = -3
-        self.assertEqual(g.heuristic_value(1, 0), 6)
+        self.assertEqual(g.heuristic_value(1, 0), 3)
 
-    def test_health_gate_blocks_unaffordable_nodes(self):
+    def test_greedy_can_keep_unaffordable_nodes(self):
         g = make_grid(3, 3, (0, 0), (2, 2))
         g.get(1, 0).value = -5
         step = next(greedy_steps(g, health=2))
-        self.assertNotIn((1, 0), step["frontier"])
+        self.assertIn((1, 0), step["frontier"])
 
 
 # ══════════════════════════════════════════════════════════════════
@@ -560,6 +586,33 @@ class TestRegistry(unittest.TestCase):
                 inspect.isgenerator(gen),
                 msg=f"{name} phải trả về generator",
             )
+
+
+class TestHillClimbingVisualMetadata(unittest.TestCase):
+    def test_simple_reports_candidate_and_accept_reject_decision(self):
+        g = make_grid(3, 3, (0, 0), (2, 2))
+        step = next(simple_hill_climbing_steps(g))
+        self.assertIsNotNone(step.get("candidate"))
+        self.assertIn(step.get("decision"), {"accept", "reject"})
+        self.assertEqual(step.get("phase"), "inspect")
+
+    def test_steepest_first_lights_all_then_selects_best(self):
+        g = make_grid(3, 3, (0, 0), (2, 2))
+        gen = steepest_ascent_hill_climbing_steps(g)
+        evaluate = next(gen)
+        select = next(gen)
+        self.assertEqual(evaluate.get("phase"), "evaluate_all")
+        self.assertIsNone(evaluate.get("chosen"))
+        self.assertEqual(len(evaluate.get("neighbor_scores")), 2)
+        self.assertEqual(select.get("phase"), "select_best")
+        self.assertIsNotNone(select.get("chosen"))
+
+    def test_stochastic_random_choice_is_from_improving_set(self):
+        g = make_grid(3, 3, (0, 0), (2, 2))
+        step = next(stochastic_hill_climbing_steps(g, rng=random.Random(4)))
+        self.assertEqual(step.get("phase"), "random_select")
+        self.assertEqual(step.get("decision"), "random")
+        self.assertIn(step.get("chosen"), step.get("improving_neighbors"))
 
 
 if __name__ == "__main__":

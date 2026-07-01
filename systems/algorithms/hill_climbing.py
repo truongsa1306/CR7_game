@@ -1,53 +1,17 @@
 """
 systems/algorithms/hill_climbing.py
 =====================================
-Thuật toán tìm kiếm cục bộ (Local Search) cho Level 2–3.
+Step generators for the local-search algorithms used by Level 3.
 
-Theo mã giả AIMA, các thuật toán leo đồi / tìm kiếm cục bộ KHÔNG có
-goal test bên trong thuật toán. Chúng chỉ tối ưu hóa một hàm mục tiêu
-(objective function) và dừng khi bị kẹt hoặc theo lịch làm nguội.
-Việc kiểm tra "đã đến đích chưa" thuộc về gameplay_scene (qua _move_player).
+All three Hill Climbing variants reuse GridModel.heuristic_value(), i.e.
+the same h(n) definition used by informed search.  A smaller h(n) is better.
 
-Shape của step dict (khác với graph search):
-    {
-        "current"         : (col, row),
-        "neighbor_scores" : {(col,row): score, ...},   # heuristic_value của các láng giềng
-        "chosen"          : (col,row) or None,          # ô được chọn bước tiếp theo
-        "stuck"           : bool,                       # True = đỉnh cục bộ (game over)
-        "path"            : None,                       # luôn None (local search không trả path)
-        "temperature"     : float or None,              # chỉ cho Simulated Annealing
-    }
-
-Tham số start
---------------
-_UNSET sentinel:
-  * start=cụ thể → bắt đầu từ vị trí đó.
-  * start=None   → random restart: chọn ngẫu nhiên một ô passable làm điểm xuất phát.
-                   Phù hợp với "không có trạng thái bắt đầu" trong local search.
-
-Mã giả AIMA:
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-HILL-CLIMBING(problem):
-    current ← Node(problem.INITIAL)
-    loop:
-        neighbors ← expand(current)
-        best      ← highest-valued node in neighbors
-        if VALUE(best) ≤ VALUE(current):
-            return current          ← đỉnh cục bộ, trả về hiện tại
-        current ← best
-
-SIMULATED-ANNEALING(problem, schedule):
-    current ← Node(problem.INITIAL)
-    t ← 1
-    loop:
-        T ← schedule(t)
-        if T = 0: return current
-        next ← random node in expand(current)
-        ΔE   ← VALUE(next) - VALUE(current)
-        if ΔE > 0: current ← next
-        else:      current ← next with prob e^(ΔE/T)
-        t ← t + 1
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Extra fields emitted for the visual solver:
+    candidate            the neighbor currently being inspected
+    phase                inspect | evaluate_all | select_best | random_select
+    decision             reject | accept | candidate | best | random | stuck | loop
+    improving_neighbors  neighbors whose h(n) is lower than current h(n)
+    loop                  True when a selected node was already visited
 """
 import math
 import random
@@ -58,193 +22,213 @@ _UNSET = object()
 
 
 def _resolve_start(grid, start, rng=None):
-    """Trả về vị trí bắt đầu.
-    start=None → random restart (chọn ngẫu nhiên ô passable).
+    """Resolve a concrete starting position.
+
+    start=None means random restart on a passable cell.
     """
     if start is None:
         passable = [(c, r) for (c, r), cell in grid.cells.items() if cell.passable]
+        if not passable:
+            raise ValueError("Ma trận không có ô nào có thể di chuyển")
         rng = rng or random.Random()
         return rng.choice(passable)
     return start
 
 
+def _candidate_scores(grid, current, current_health, use_health):
+    """Return passable, affordable orthogonal neighbors in L-R-U-D order."""
+    result = []
+    for dc, dr in ORTHOGONAL_DIRECTIONS:
+        nc, nr = current[0] + dc, current[1] + dr
+        if not grid.in_bounds(nc, nr):
+            continue
+        cell = grid.get(nc, nr)
+        if cell is None or not cell.passable:
+            continue
+        pos = (nc, nr)
+        if use_health and not grid.can_afford(current_health, *pos):
+            continue
+        result.append((pos, grid.heuristic_value(*pos)))
+    return result
+
+
+def _base_step(current, scores, chosen=None, *, candidate=None, phase="inspect",
+               decision=None, stuck=False, loop=False, improving=None,
+               temperature=None):
+    return {
+        "current": current,
+        "neighbor_scores": dict(scores),
+        "chosen": chosen,
+        "candidate": candidate,
+        "phase": phase,
+        "decision": decision,
+        "improving_neighbors": list(improving or []),
+        "stuck": stuck,
+        "loop": loop,
+        "path": None,
+        "temperature": temperature,
+    }
+
+
 # ══════════════════════════════════════════════════════════════════
 # SIMPLE HILL CLIMBING
-# Xét lần lượt láng giềng, chọn ngay ô ĐẦU TIÊN có chi phí nhỏ hơn hiện tại.
+# Inspect neighbors one by one and accept the first better neighbor.
 # ══════════════════════════════════════════════════════════════════
 def simple_hill_climbing_steps(grid, start=_UNSET, rng=None, health=None):
-    """Simple Hill Climbing – "first-choice".
-    Dừng (stuck=True) khi không có ô láng giềng nào có chi phí thấp hơn hiện tại.
-    Không có goal test bên trong (đúng với mã giả local search).
-    """
     start = grid.start if start is _UNSET else start
     current = _resolve_start(grid, start, rng)
     current_health = health if health is not None else 100
+    visited = {current}
 
     while True:
         current_score = grid.heuristic_value(*current)
-        scores        = {}
-        chosen        = None
-        last_pos      = None
-        last_score    = None
+        candidates = _candidate_scores(grid, current, current_health, health is not None)
+        chosen = None
 
-        for dc, dr in ORTHOGONAL_DIRECTIONS:
-            nc, nr = current[0] + dc, current[1] + dr
-            if not grid.in_bounds(nc, nr):
-                continue
-            cell = grid.get(nc, nr)
-            if cell is None or not cell.passable:
-                continue
-            pos = (nc, nr)
-            if health is not None and not grid.can_afford(current_health, *pos):
-                continue
-            score = grid.heuristic_value(*pos)
-            scores[pos] = score
-            last_pos = pos
-            last_score = score
-            yield {
-                "current":          current,
-                "neighbor_scores":  {pos: score},
-                "chosen":           None,
-                "stuck":            False,
-                "path":             None,
-                "temperature":      None,
-            }
-            if chosen is None and score < current_score:
+        for pos, score in candidates:
+            better = score < current_score
+            is_loop = better and pos in visited
+            decision = "loop" if is_loop else ("accept" if better else "reject")
+            yield _base_step(
+                current,
+                {pos: score},
+                chosen=pos if better and not is_loop else None,
+                candidate=pos,
+                phase="inspect",
+                decision=decision,
+                loop=is_loop,
+                improving=[pos] if better else [],
+            )
+
+            if is_loop:
+                return
+            if better:
                 chosen = pos
                 break
 
-        stuck = chosen is None
-        yield {
-            "current":          current,
-            "neighbor_scores":  {chosen: grid.heuristic_value(*chosen)} if chosen is not None else ({last_pos: last_score} if last_pos is not None else {}),
-            "chosen":           chosen,
-            "stuck":            stuck,
-            "path":             None,
-            "temperature":      None,
-        }
-
-        if stuck:
-            return          # đỉnh cục bộ – scene xử lý game over
+        if chosen is None:
+            yield _base_step(
+                current,
+                {},
+                phase="inspect",
+                decision="stuck",
+                stuck=True,
+            )
+            return
 
         if health is not None:
             current_health += grid.health_delta(*chosen)
         current = chosen
+        visited.add(current)
 
 
 # ══════════════════════════════════════════════════════════════════
 # STEEPEST-ASCENT HILL CLIMBING
-# Xét TẤT CẢ láng giềng, chọn ô có chi phí nhỏ nhất.
+# Light all neighbors, then select the one with the smallest h(n).
 # ══════════════════════════════════════════════════════════════════
 def steepest_ascent_hill_climbing_steps(grid, start=_UNSET, rng=None, health=None):
-    """Steepest-Ascent Hill Climbing – "best-improvement".
-    So sánh tất cả láng giềng, chọn ô có chi phí thấp nhất.
-    Nếu không có láng giềng nào thấp hơn hiện tại → stuck.
-    """
     start = grid.start if start is _UNSET else start
     current = _resolve_start(grid, start, rng)
     current_health = health if health is not None else 100
+    visited = {current}
 
     while True:
-        current_score          = grid.heuristic_value(*current)
-        scores                 = {}
-        best_pos, best_score   = None, current_score  # ngưỡng tối đa = current
+        current_score = grid.heuristic_value(*current)
+        candidates = _candidate_scores(grid, current, current_health, health is not None)
+        scores = dict(candidates)
+        improving = [pos for pos, score in candidates if score < current_score]
 
-        for dc, dr in ORTHOGONAL_DIRECTIONS:
-            nc, nr = current[0] + dc, current[1] + dr
-            if not grid.in_bounds(nc, nr):
-                continue
-            cell = grid.get(nc, nr)
-            if cell is None or not cell.passable:
-                continue
-            pos = (nc, nr)
-            if health is not None and not grid.can_afford(current_health, *pos):
-                continue
-            score = grid.heuristic_value(*pos)
-            scores[pos] = score
-            if score < best_score:
-                best_score, best_pos = score, pos
+        # First visual step: every neighbor is visible and listed.
+        yield _base_step(
+            current,
+            scores,
+            phase="evaluate_all",
+            decision="candidate",
+            improving=improving,
+        )
 
-        stuck = best_pos is None
-        yield {
-            "current":          current,
-            "neighbor_scores":  scores,
-            "chosen":           best_pos,
-            "stuck":            stuck,
-            "path":             None,
-            "temperature":      None,
-        }
-
-        if stuck:
+        if not improving:
+            yield _base_step(
+                current,
+                scores,
+                phase="select_best",
+                decision="stuck",
+                stuck=True,
+            )
             return
 
-        if best_pos is not None and health is not None:
+        best_pos = min(improving, key=lambda pos: (scores[pos], pos[1], pos[0]))
+        is_loop = best_pos in visited
+        yield _base_step(
+            current,
+            scores,
+            chosen=None if is_loop else best_pos,
+            candidate=best_pos,
+            phase="select_best",
+            decision="loop" if is_loop else "best",
+            loop=is_loop,
+            improving=improving,
+        )
+
+        if is_loop:
+            return
+        if health is not None:
             current_health += grid.health_delta(*best_pos)
         current = best_pos
+        visited.add(current)
 
 
 # ══════════════════════════════════════════════════════════════════
 # STOCHASTIC HILL CLIMBING
-# Lọc các láng giềng tốt hơn, chọn NGẪU NHIÊN có trọng số.
+# Randomly select one node from the set of better neighbors.
 # ══════════════════════════════════════════════════════════════════
 def stochastic_hill_climbing_steps(grid, start=_UNSET, rng=None, health=None):
-    """Stochastic Hill Climbing.
-    Trong tập các láng giềng có chi phí thấp hơn hiện tại, chọn ngẫu nhiên có
-    trọng số tỷ lệ với mức độ cải thiện. Có thể thoát local minima tốt hơn
-    Simple/Steepest HC.
-    """
-    rng     = rng or random.Random()
-    start   = grid.start if start is _UNSET else start
+    rng = rng or random.Random()
+    start = grid.start if start is _UNSET else start
     current = _resolve_start(grid, start, rng)
     current_health = health if health is not None else 100
+    visited = {current}
 
     while True:
         current_score = grid.heuristic_value(*current)
-        scores        = {}
-        downhill      = []   # (pos, improvement)
+        candidates = _candidate_scores(grid, current, current_health, health is not None)
+        scores = dict(candidates)
+        improving = [pos for pos, score in candidates if score < current_score]
 
-        for dc, dr in ORTHOGONAL_DIRECTIONS:
-            nc, nr = current[0] + dc, current[1] + dr
-            if not grid.in_bounds(nc, nr):
-                continue
-            cell = grid.get(nc, nr)
-            if cell is None or not cell.passable:
-                continue
-            pos = (nc, nr)
-            if health is not None and not grid.can_afford(current_health, *pos):
-                continue
-            score = grid.heuristic_value(*pos)
-            scores[pos] = score
-            if score < current_score:
-                downhill.append((pos, current_score - score))
-
-        chosen = None
-        if downhill:
-            weights = [w for _, w in downhill]
-            chosen = rng.choices([p for p, _ in downhill], weights=weights, k=1)[0]
-
-        stuck = chosen is None
-        yield {
-            "current":          current,
-            "neighbor_scores":  scores,
-            "chosen":           chosen,
-            "stuck":            stuck,
-            "path":             None,
-            "temperature":      None,
-        }
-
-        if stuck:
+        if not improving:
+            yield _base_step(
+                current,
+                scores,
+                phase="random_select",
+                decision="stuck",
+                stuck=True,
+            )
             return
 
+        # Uniform random choice in the improving-neighbor set, as requested.
+        chosen = rng.choice(improving)
+        is_loop = chosen in visited
+        yield _base_step(
+            current,
+            scores,
+            chosen=None if is_loop else chosen,
+            candidate=chosen,
+            phase="random_select",
+            decision="loop" if is_loop else "random",
+            loop=is_loop,
+            improving=improving,
+        )
+
+        if is_loop:
+            return
         if health is not None:
             current_health += grid.health_delta(*chosen)
         current = chosen
+        visited.add(current)
 
 
 # ══════════════════════════════════════════════════════════════════
-# SIMULATED ANNEALING
-# Mã giả AIMA: chấp nhận bước đi tệ hơn với xác suất e^(ΔE/T).
-# T giảm dần theo lịch làm nguội (cooling schedule).
+# SIMULATED ANNEALING (kept for other scenes/experiments)
 # ══════════════════════════════════════════════════════════════════
 def simulated_annealing_steps(
     grid,
@@ -255,75 +239,52 @@ def simulated_annealing_steps(
     rng=None,
     health=None,
 ):
-    """Simulated Annealing – "Precision Sprints" (Level 3).
-
-    Mỗi bước:
-    1. Chọn ngẫu nhiên MỘT láng giềng.
-    2. Nếu tốt hơn → luôn chấp nhận.
-    3. Nếu tệ hơn   → chấp nhận với xác suất e^(ΔE / T).
-    4. Giảm nhiệt độ T theo hệ số cooling.
-    5. Khi T ≤ min_temp và không chấp nhận được bước nào → stuck.
-
-    Không có goal test bên trong (local search thuần túy).
-    start=None → random restart theo ô passable bất kỳ.
-    """
-    rng         = rng or random.Random()
-    start       = grid.start if start is _UNSET else start
-    current     = _resolve_start(grid, start, rng)
+    rng = rng or random.Random()
+    start = grid.start if start is _UNSET else start
+    current = _resolve_start(grid, start, rng)
     current_health = health if health is not None else 100
     temperature = float(initial_temp)
 
     while True:
         current_score = grid.heuristic_value(*current)
-        candidates    = list(grid.neighbors(*current))
-        scores        = {(c.col, c.row): grid.heuristic_value(c.col, c.row)
-                         for c in candidates}
-
+        candidates = _candidate_scores(grid, current, current_health, health is not None)
+        scores = dict(candidates)
         chosen = None
-        if candidates:
-            pick  = rng.choice(candidates)
-            pos   = (pick.col, pick.row)
-            if health is not None and not grid.can_afford(current_health, *pos):
-                continue
-            delta = scores[pos] - current_score
 
-            if delta > 0:
-                # Luôn chấp nhận bước cải thiện
+        if candidates:
+            pos, score = rng.choice(candidates)
+            delta = score - current_score  # lower is better
+            if delta < 0:
                 chosen = pos
             elif temperature > min_temp:
-                # Chấp nhận bước tệ hơn với xác suất e^(ΔE/T)
-                accept_prob = math.exp(delta / temperature)
+                accept_prob = math.exp(-delta / max(temperature, 1e-9))
                 if rng.random() < accept_prob:
                     chosen = pos
 
-        # Giảm nhiệt độ mỗi bước (đúng với mã giả AIMA: T ← schedule(t))
         temperature = max(temperature * cooling, min_temp)
-
-        # Thực sự stuck chỉ khi nhiệt độ chạm đáy VÀ không chấp nhận được
-        stuck = (chosen is None) and (temperature <= min_temp)
-
-        yield {
-            "current":          current,
-            "neighbor_scores":  scores,
-            "chosen":           chosen,
-            "stuck":            stuck,
-            "path":             None,
-            "temperature":      temperature,
-        }
+        stuck = chosen is None and temperature <= min_temp
+        yield _base_step(
+            current,
+            scores,
+            chosen=chosen,
+            candidate=chosen,
+            phase="annealing",
+            decision="accept" if chosen is not None else ("stuck" if stuck else "reject"),
+            stuck=stuck,
+            temperature=temperature,
+        )
 
         if stuck:
-            return          # scene xử lý game over
-
-        if chosen is not None and health is not None:
-            current_health += grid.health_delta(*chosen)
+            return
+        if chosen is not None:
+            if health is not None:
+                current_health += grid.health_delta(*chosen)
             current = chosen
-        # Nếu chosen=None nhưng chưa stuck (T chưa đến đáy) → thử lại vòng tiếp
 
 
-# ─── Registry ────────────────────────────────────────────────────
 ALGORITHMS_HILLCLIMB = {
-    "Hill Climbing":       simple_hill_climbing_steps,
-    "Steepest Ascent HC":  steepest_ascent_hill_climbing_steps,
-    "Stochastic HC":       stochastic_hill_climbing_steps,
+    "Hill Climbing": simple_hill_climbing_steps,
+    "Steepest Ascent HC": steepest_ascent_hill_climbing_steps,
+    "Stochastic HC": stochastic_hill_climbing_steps,
     "Simulated Annealing": simulated_annealing_steps,
 }

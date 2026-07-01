@@ -47,6 +47,7 @@ COL_HIGHLIGHT_PURPLE = (148, 44, 176)
 STATE_INTRO = "INTRO"
 STATE_LEVEL_SELECT = "LEVEL_SELECT"
 STATE_GAMEPLAY = "GAMEPLAY"
+STATE_BELIEF = "BELIEF"
 STATE_CARO = "CARO"
 STATE_EIGHT_QUEENS = "EIGHT_QUEENS"
 STATE_LEVELUP = "LEVELUP"
@@ -97,7 +98,7 @@ LEVEL_NAMES = {
     2: "Leo Nui",
     3: "Tim Kiem Vo Ben",
     4: "Caro Doi Khang",
-    5: "8 Quan Hau"
+    5: "N Quan Hau"
 }
 
 LEVEL_ALGORITHMS = [
@@ -115,7 +116,7 @@ LEVEL_TITLES = {
     2: "LEVEL 3: LEO NUI",
     3: "LEVEL 4: TIM KIEM VO BEN",
     4: "LEVEL 5: CARO DOI KHANG",
-    5: "LEVEL 6: 8 QUAN HAU"
+    5: "LEVEL 6: N QUAN HAU"
 }
 
 # Kits (Soccer Uniforms) - CR7 inspired
@@ -138,7 +139,7 @@ LEVEL_INTRO_LINES = {
     2: "Level 3: Hay tim duong di xuong nui. Chi xuat phat tu vi tri cao nhat!",
     3: "Level 4: Co 2 nhom bai toan. Nhom khong quan sat chi co ? va G/CR7; nhom mot phan quan sat co ca so va ?. Bam BELIEF de mo tat ca thanh so.",
     4: "Level 5: doi khang caro. Chon nuoc di va dau AI su dung Minimax/Alpha-Beta/Expectimax!",
-    5: "Level 6: Giai bai toan 8 quan hau voi Backtracking, Forward Checking va Min-Conflict."
+    5: "Level 6: Giai bai toan N quan hau tu 4 den 8 voi Backtracking, Forward Checking va Min-Conflict."
 }
 
 LEVELUP_LINES = {
