@@ -144,13 +144,17 @@ def alphabeta(board, depth, alpha, beta, is_max, nodes):
 
 def expectimax(board, depth, is_max, nodes):
     nodes[0] += 1
+
     if check_win(board, AI):
         return 9000 - depth
     if check_win(board, HUMAN):
         return -9000 + depth
     if is_full(board) or depth == 0:
         return evaluate(board)
+
     moves = get_moves(board)
+
+    # MAX NODE (AI)
     if is_max:
         best = -99999
         for r, c in moves:
@@ -158,12 +162,14 @@ def expectimax(board, depth, is_max, nodes):
             best = max(best, expectimax(board, depth - 1, False, nodes))
             board[r][c] = EMPTY
         return best
+
+    # CHANCE NODE (Human)
     total = 0
     for r, c in moves:
         board[r][c] = HUMAN
-        value = expectimax(board, depth - 1, True, nodes)
-        total += value * 0.8 + random.uniform(-50, 50) * 0.2
+        total += expectimax(board, depth - 1, True, nodes)
         board[r][c] = EMPTY
+
     return total / len(moves) if moves else 0
 
 
