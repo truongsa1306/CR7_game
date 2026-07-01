@@ -14,6 +14,7 @@ import pygame
 import config as C
 from entities.player import Player
 from scenes.base_scene import BaseScene
+from systems.asset_manager import AssetManager
 from ui.button import Button
 from ui.label import draw_text
 from ui.panel import draw_outer_frame, draw_stadium_background, draw_wood_panel
@@ -536,6 +537,11 @@ class CaroScene(BaseScene):
                 hover = (row, col)
 
         grid_color = (214, 205, 177)
+        tile_size = (self.cell_size, self.cell_size)
+        grass_tile = AssetManager.instance().get_terrain_tile("grass", size=tile_size)
+        path_tile = AssetManager.instance().get_terrain_tile("path", size=tile_size)
+        hover_overlay = pygame.Surface(tile_size, pygame.SRCALPHA)
+        hover_overlay.fill((245, 214, 92, 78))
         for row in range(self.board_n):
             for col in range(self.board_n):
                 rect = pygame.Rect(
@@ -544,8 +550,10 @@ class CaroScene(BaseScene):
                     self.cell_size,
                     self.cell_size,
                 )
-                fill = (46, 82, 49) if hover == (row, col) else (31, 24, 19)
-                pygame.draw.rect(surface, fill, rect)
+                tile = grass_tile if (row + col) % 2 == 0 else path_tile
+                surface.blit(tile, rect.topleft)
+                if hover == (row, col):
+                    surface.blit(hover_overlay, rect.topleft)
                 pygame.draw.rect(surface, grid_color, rect, max(1, self.cell_size // 34))
 
                 inset = max(5, self.cell_size // 5)

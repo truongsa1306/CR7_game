@@ -765,12 +765,20 @@ class BeliefSearchScene(BaseScene):
         hidden = not cell.revealed and pos != grid.goal
 
         if hidden:
-            pygame.draw.rect(surface, (232, 224, 198), rect)
+            tile = AssetManager.instance().get_terrain_tile("silver", size=rect.size)
+            surface.blit(tile, rect.topleft)
+            veil = pygame.Surface(rect.size, pygame.SRCALPHA)
+            veil.fill((242, 236, 210, 72))
+            surface.blit(veil, rect.topleft)
             pygame.draw.rect(surface, (65, 55, 45), rect, 1)
             draw_text(surface, "?", rect.center, size=max(11, rect.height // 2),
                       color=C.COL_BLACK, align="center", shadow=False)
         else:
-            pygame.draw.rect(surface, self._cell_color(cell.kind, cell.value), rect)
+            tile = AssetManager.instance().get_terrain_tile(
+                terrain_tile_name(cell.kind, cell.value),
+                size=rect.size,
+            )
+            surface.blit(tile, rect.topleft)
             pygame.draw.rect(surface, (48, 72, 42), rect, 1)
             if cell.kind == "wall":
                 draw_text(surface, "×", rect.center, size=max(10, rect.height // 2),

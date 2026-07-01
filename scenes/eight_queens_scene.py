@@ -12,6 +12,7 @@ import pygame
 import config as C
 from entities.player import Player
 from scenes.base_scene import BaseScene
+from systems.asset_manager import AssetManager
 from ui.button import Button
 from ui.label import draw_text
 from ui.panel import draw_wood_panel, draw_stadium_background
@@ -504,12 +505,12 @@ class EightQueensScene(BaseScene):
         conflicted = self._conflicted_cells(board)
         ai_target = self._ai_target_cell()
         ai_target_color = self._ai_target_color()
-
         for row in range(n):
             for col in range(n):
                 cell = self._cell_rect(row, col, inset=2)
-                color = (70, 80, 50) if (row + col) % 2 == 0 else (50, 60, 40)
-                pygame.draw.rect(surface, color, cell)
+                tile_name = "grass" if (row + col) % 2 == 0 else "path"
+                tile = AssetManager.instance().get_terrain_tile(tile_name, size=cell.size)
+                surface.blit(tile, cell.topleft)
                 if ai_target == (row, col):
                     pygame.draw.rect(surface, ai_target_color, cell, 4)
                 if self.hovered_cell == (row, col):
