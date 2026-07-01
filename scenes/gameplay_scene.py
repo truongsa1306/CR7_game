@@ -183,23 +183,16 @@ ALGORITHM_FACTORIES = {
     "AND OR SEARCH": and_or_search_steps,
 }
 
-BLIND_SEARCH_ALGORITHMS = {"BFS", "DFS", "IDS"}
-INFORMED_SEARCH_ALGORITHMS = {"UCS", "Greedy", "A*"}
-TRACE_TABLE_ALGORITHMS = BLIND_SEARCH_ALGORITHMS | INFORMED_SEARCH_ALGORITHMS
-HILL_CLIMBING_ALGORITHMS = {"Hill Climbing", "Steepest Ascent HC", "Stochastic HC"}
-EDITABLE_MATRIX_LEVELS = {0, 1, 2}
-PROGRESS_HISTORY_LEVELS = {0, 1}
-
 
 LEVEL_LAYOUTS = {
     0: {
         "start": (0, 2),
         "goal": (8, 0),
-        "path": [],
-        "danger": [],
-        "fire": [],
-        "wall": [],
-        "fog": False,
+        "path": [(1, 2), (2, 2), (2, 1), (3, 1), (4, 1), (5, 1), (5, 2), (5, 3), (6, 3), (7, 3)],
+        "danger": [(6, 1), (7, 1), (8, 1), (6, 4), (7, 4)],
+        "fire": [(7, 0), (7, 2), (8, 2)],
+        "wall": [(3, 3), (4, 3)],
+        "fog": True,
     },
     1: {
         "start": (0, 2),
@@ -245,8 +238,6 @@ class GameplayScene(BaseScene):
         self.generator = None
         self.algorithm_buttons = []
         self.randomize_button = None
-        self.matrix_edit_button = None
-        self.matrix_edit_mode = False
         self.belief_button = None
         self.and_or_button = None
         self.back_button = None
@@ -271,16 +262,6 @@ class GameplayScene(BaseScene):
         self.and_or_branch = set()
         self.and_or_goal = None
         self.and_or_path = []
-        self.search_trace_rows = []
-        self.last_search_step = None
-        self.algorithm_history = []
-        self.algorithm_history_index = -1
-        self.progress_prev_button = None
-        self.progress_next_button = None
-        self.progress_auto_button = None
-        self.hill_trace_rows = []
-        self.hill_status_message = ""
-        self.hill_path_history = []
 
     def on_enter(self, **kwargs):
         if self.game_state.level == 4:
@@ -312,33 +293,16 @@ class GameplayScene(BaseScene):
         self.dialogue.handle_event(event)
         if self.randomize_button is not None:
             self.randomize_button.handle_event(event)
-        if self.matrix_edit_button is not None:
-            self.matrix_edit_button.handle_event(event)
         if self.belief_button is not None:
             self.belief_button.handle_event(event)
         if self.and_or_button is not None:
             self.and_or_button.handle_event(event)
         if self.back_button is not None:
             self.back_button.handle_event(event)
-        if self.progress_prev_button is not None:
-            self.progress_prev_button.handle_event(event)
-        if self.progress_next_button is not None:
-            self.progress_next_button.handle_event(event)
-        if self.progress_auto_button is not None:
-            self.progress_auto_button.handle_event(event)
         if self.level4_toggle is not None:
             self.level4_toggle.handle_event(event)
         for button in self.algorithm_buttons:
             button.handle_event(event)
-
-        if (
-            event.type == pygame.MOUSEBUTTONDOWN
-            and event.button == 1
-            and self.matrix_edit_mode
-            and self.game_state.level in EDITABLE_MATRIX_LEVELS
-        ):
-            if self._handle_matrix_edit_click(event.pos):
-                return
 
         if event.type == pygame.KEYDOWN:
             if event.key in (pygame.K_LEFT, pygame.K_RIGHT, pygame.K_UP, pygame.K_DOWN):
@@ -359,20 +323,12 @@ class GameplayScene(BaseScene):
         if self.follow_path and not self.player.is_moving:
             next_pos = self.follow_path.pop(0)
             if next_pos != (self.player.col, self.player.row):
-                if not self._move_player(next_pos):
-                    self.follow_path = []
-                    self.auto_play = False
-                    if self.algorithm_name in HILL_CLIMBING_ALGORITHMS and "loop" in self.hill_status_message.lower():
-                        return
-                    self._go_gameover("stuck")
-                    return
+                self._move_player(next_pos)
             if not self.follow_path:
                 self.dialogue.set_status("")
             return
 
-        if self.finished or self.player.is_moving:
-            return
-        if not self.dialogue.fully_revealed and not self._should_draw_hill_climbing_table():
+        if self.finished or self.player.is_moving or not self.dialogue.fully_revealed:
             return
 
         if self.auto_play:
@@ -387,12 +343,7 @@ class GameplayScene(BaseScene):
         self._draw_thumbnail(surface)
         self._draw_grid(surface)
         self._draw_side_panel(surface)
-        if self._should_draw_blind_search_table():
-            self._draw_blind_search_table(surface)
-        elif self._should_draw_hill_climbing_table():
-            self._draw_hill_climbing_table(surface)
-        else:
-            self.dialogue.draw(surface)
+        self.dialogue.draw(surface)
         draw_outer_frame(surface)
 
     # ------------------------------------------------------------------
@@ -421,21 +372,13 @@ class GameplayScene(BaseScene):
         else:
             algorithms = C.LEVEL_ALGORITHMS[self.game_state.level]
             total_h = len(algorithms) * button_h + (len(algorithms) - 1) * gap
-            if self.game_state.level in EDITABLE_MATRIX_LEVELS:
-                top = panel.bottom - 3 * button_h - 2 * gap - 12 - total_h - 14
-            else:
-                top = panel.bottom - total_h - 12
+            top = panel.bottom - total_h - 12
             columns = 1
             btn_width = panel.width - 24
 
         self.randomize_button = None
-        self.matrix_edit_button = None
-        self.matrix_edit_mode = False
         self.belief_button = None
         self.and_or_button = None
-        self.progress_prev_button = None
-        self.progress_next_button = None
-        self.progress_auto_button = None
         self.back_button = Button(
             pygame.Rect(panel.left + 12, panel.bottom - 3 * button_h - 2 * gap - 12, panel.width - 24, button_h),
             "BACK",
@@ -443,63 +386,7 @@ class GameplayScene(BaseScene):
             on_click=self._back_to_level_select,
         )
 
-        if self.game_state.level in EDITABLE_MATRIX_LEVELS:
-            self.back_button = Button(
-                pygame.Rect(panel.left + 12, panel.bottom - button_h - 12, panel.width - 24, button_h),
-                "BACK",
-                font_size=11,
-                on_click=self._back_to_level_select,
-            )
-            control_y = panel.bottom - 2 * button_h - gap - 12
-            if self.game_state.level in PROGRESS_HISTORY_LEVELS:
-                control_w = (panel.width - 24 - gap * 2) // 3
-                self.progress_prev_button = Button(
-                    pygame.Rect(panel.left + 12, control_y, control_w, button_h),
-                    "PREV",
-                    font_size=10,
-                    on_click=self._rewind_algorithm_progress,
-                )
-                self.progress_next_button = Button(
-                    pygame.Rect(panel.left + 12 + control_w + gap, control_y, control_w, button_h),
-                    "NEXT",
-                    font_size=10,
-                    on_click=self._advance_algorithm_progress,
-                )
-                self.progress_auto_button = Button(
-                    pygame.Rect(panel.left + 12 + (control_w + gap) * 2, control_y, control_w, button_h),
-                    "AUTO",
-                    font_size=10,
-                    on_click=self._toggle_algorithm_auto,
-                )
-            else:
-                control_w = (panel.width - 24 - gap) // 2
-                self.progress_next_button = Button(
-                    pygame.Rect(panel.left + 12, control_y, control_w, button_h),
-                    "NEXT",
-                    font_size=10,
-                    on_click=self._advance_algorithm_progress,
-                )
-                self.progress_auto_button = Button(
-                    pygame.Rect(panel.left + 12 + control_w + gap, control_y, control_w, button_h),
-                    "AUTO",
-                    font_size=10,
-                    on_click=self._toggle_algorithm_auto,
-                )
-            edit_y = panel.bottom - 3 * button_h - 2 * gap - 12
-            edit_w = (panel.width - 24 - gap) // 2
-            self.randomize_button = Button(
-                pygame.Rect(panel.left + 12, edit_y, edit_w, button_h),
-                "RANDOM",
-                font_size=10,
-                on_click=self._toggle_random_demo,
-            )
-            self.matrix_edit_button = Button(
-                pygame.Rect(panel.left + 12 + edit_w + gap, edit_y, edit_w, button_h),
-                "EDIT",
-                font_size=10,
-                on_click=self._toggle_matrix_edit_mode,
-            )
-        elif self.game_state.level == 3 and self.level4_tab == 2:
+        if self.game_state.level == 3 and self.level4_tab == 2:
             self.back_button = Button(
                 pygame.Rect(panel.left + 12, panel.bottom - 2 * button_h - gap - 12, panel.width - 24, button_h),
                 "BACK",
@@ -560,15 +447,6 @@ class GameplayScene(BaseScene):
 
         self.algorithm_name = name
         self.game_state.suggest_algorithm = None
-        self.matrix_edit_mode = False
-        if self.game_state.level in {0, 1, 2} and self.grid.start is not None:
-            self.game_state.reset_health()
-            self.algorithm_health = self.game_state.current_health
-            self.current = self.grid.start
-            self.player.place_at_grid(*self.grid.start, self.grid_rect.topleft, self.cell_size)
-            self._clear_algorithm_scores()
-            if self.game_state.level == 2:
-                self._apply_hill_climbing_h_values(self.grid)
         start_pos = self.current if self.current is not None else (self.player.col, self.player.row)
         try:
             self.generator = ALGORITHM_FACTORIES[self.algorithm_name](
@@ -590,13 +468,6 @@ class GameplayScene(BaseScene):
         self.neighbor_scores = {}
         self.chosen = None
         self.temperature = None
-        self.search_trace_rows = []
-        self.last_search_step = None
-        self.algorithm_history = []
-        self.algorithm_history_index = -1
-        self.hill_trace_rows = []
-        self.hill_status_message = ""
-        self.hill_path_history = [start_pos] if start_pos is not None else []
         self.algorithm_health = self.game_state.current_health
         self.finished = False
         self.auto_play = True
@@ -650,7 +521,7 @@ class GameplayScene(BaseScene):
             self.grid is not None
             and not self.finished
             and not self.player.is_moving
-            and (self.dialogue.fully_revealed or self._should_draw_hill_climbing_table())
+            and self.dialogue.fully_revealed
         )
 
     def _is_orthogonal_step(self, pos):
@@ -694,15 +565,11 @@ class GameplayScene(BaseScene):
             self.grid = self._build_level4_grid()
         else:
             self.grid = self._build_grid(self.game_state.level)
-        self._clear_algorithm_scores()
-        if self.game_state.level == 1:
-            self._apply_informed_default_values(self.grid)
         if self.game_state.level == 2:
-            self._randomize_hill_matrix(self.grid)
-            self._apply_hill_climbing_h_values(self.grid)
+            self._randomize_value_cells(self.grid)
         self.grid_rect, self.cell_size = self._grid_geometry(self.grid.cols, self.grid.rows)
         self.player.place_at_grid(*self.grid.start, self.grid_rect.topleft, self.cell_size)
-        if self.game_state.level not in {0, 2, 3}:
+        if self.game_state.level not in {2, 3}:
             self.grid.reveal_around(*self.grid.start, radius=1)
         self.visited = {self.grid.start}
         self.frontier = set()
@@ -725,13 +592,6 @@ class GameplayScene(BaseScene):
         self.and_or_path = []
         self.and_or_choices = set()
         self.and_or_selected_choice = None
-        self.search_trace_rows = []
-        self.last_search_step = None
-        self.algorithm_history = []
-        self.algorithm_history_index = -1
-        self.hill_trace_rows = []
-        self.hill_status_message = ""
-        self.hill_path_history = [self.current] if self.current is not None else []
         self.generator = ALGORITHM_FACTORIES[self.algorithm_name](self.grid, start=self.current, health=self.algorithm_health)
 
     def _build_grid(self, level):
@@ -745,33 +605,6 @@ class GameplayScene(BaseScene):
         grid.set_kind(*grid.start, "start")
         grid.set_kind(*grid.goal, "trophy")
         return grid
-
-    def _clear_algorithm_scores(self):
-        if self.grid is None:
-            return
-        for cell in self.grid.cells.values():
-            cell.g = 0
-            cell.h = 0
-            cell.f = 0
-
-    def _apply_informed_default_values(self, grid):
-        for pos, cell in grid.cells.items():
-            if pos == grid.start:
-                cell.value = 0
-                cell.kind = "start"
-            elif pos == grid.goal:
-                cell.value = 0
-                cell.kind = "trophy"
-            elif cell.kind == "wall":
-                cell.value = None
-            elif cell.kind == "fire":
-                cell.value = -35
-            elif cell.kind == "danger":
-                cell.value = -20
-            elif cell.kind == "path":
-                cell.value = 8
-            else:
-                cell.value = 0
 
     def _build_level4_grid(self):
         grid = self._build_grid(3)
@@ -808,52 +641,13 @@ class GameplayScene(BaseScene):
             return
         self._advance_algorithm()
 
-    def _advance_algorithm_progress(self):
-        self.auto_play = False
-        if self._can_restore_next_progress_step():
-            self._restore_algorithm_progress(self.algorithm_history_index + 1)
-            return
-        self._advance_algorithm()
-
-    def _rewind_algorithm_progress(self):
-        self.auto_play = False
-        if not self.algorithm_history:
-            self.dialogue.set_status("Chua co tien trinh de tua lai")
-            return
-        if self.algorithm_history_index <= 0:
-            self._restore_algorithm_progress(0)
-            self.dialogue.set_status("Dang o buoc dau tien")
-            return
-        self._restore_algorithm_progress(self.algorithm_history_index - 1)
-
-    def _toggle_algorithm_auto(self):
-        if self.finished:
-            return
-        self.auto_play = not self.auto_play
-        self.step_timer = 0.0
-        self.dialogue.set_status("Tu dong" if self.auto_play else "Tam dung")
-
-    def _can_restore_next_progress_step(self):
-        return (
-            self.game_state.level in {0, 1}
-            and self.algorithm_name in TRACE_TABLE_ALGORITHMS
-            and 0 <= self.algorithm_history_index < len(self.algorithm_history) - 1
-        )
-
     def _advance_algorithm(self):
         if self.finished or self.player.is_moving or self.generator is None:
             return
         try:
             step = next(self.generator)
         except StopIteration:
-            if self.algorithm_name in HILL_CLIMBING_ALGORITHMS:
-                self.generator = None
-                self.auto_play = False
-                self.searching = False
-                self.hill_status_message = "Thuật toán đã dừng. Hãy RANDOM hoặc EDIT ma trận để thử lại."
-                self.dialogue.set_status(self.hill_status_message)
-            else:
-                self._go_gameover("stuck")
+            self._go_gameover("stuck")
             return
         except Exception as exc:
             self.generator = None
@@ -862,8 +656,6 @@ class GameplayScene(BaseScene):
             self.dialogue.set_status(f"Thuật toán dừng do lỗi: {exc}")
             print(f"[Gameplay] algorithm step failed: {exc}")
             return
-        if self.game_state.level in {0, 1} and self.algorithm_name in TRACE_TABLE_ALGORITHMS:
-            self._store_algorithm_progress_step(step)
 
         try:
             self.current = step.get("current") or self.current
@@ -880,15 +672,12 @@ class GameplayScene(BaseScene):
                 self.and_or_path = list(step.get("or_path", self.and_or_path))
                 self.and_or_choices = set(step.get("branch_choices", self.and_or_choices))
                 self.and_or_selected_choice = step.get("selected_choice", self.and_or_selected_choice)
-            elif self.algorithm_name in HILL_CLIMBING_ALGORITHMS:
+            elif self.algorithm_name in {"Hill Climbing", "Steepest Ascent HC", "Stochastic HC"}:
                 self.frontier = set(self.neighbor_scores.keys())
-                self.visited = set(self.hill_path_history)
-                self._record_hill_climbing_step(step)
+                self.visited = set()
             else:
                 self.frontier = set(step.get("frontier", []))
                 self.visited = set(step.get("visited", self.visited))
-                if self.game_state.level in {0, 1} and self.algorithm_name in TRACE_TABLE_ALGORITHMS:
-                    self._record_blind_search_step(step)
 
             if self.algorithm_name == "IDS" and self.depth_limit is not None:
                 label = f"IDS depth={self.depth_limit}"
@@ -896,35 +685,11 @@ class GameplayScene(BaseScene):
                     label += " (restart)"
                 self.dialogue.set_status(label)
 
-            if self.algorithm_name in HILL_CLIMBING_ALGORITHMS:
+            if self.algorithm_name in {"Hill Climbing", "Steepest Ascent HC", "Stochastic HC"}:
                 self._set_hill_climbing_dialogue(step)
-                loop_detected = bool(step.get("loop")) or (
-                    self.chosen is not None and self.chosen in self.hill_path_history
-                )
-                if loop_detected:
-                    self.generator = None
-                    self.auto_play = False
-                    self.searching = False
-                    self.chosen = step.get("candidate") or self.chosen
-                    self.hill_status_message = (
-                        "Đã dính loop: thuật toán quay lại ô đã đi qua. "
-                        "Hãy RANDOM hoặc EDIT ma trận rồi chạy lại."
-                    )
-                    self.dialogue.set_status(self.hill_status_message)
-                    return
 
             if step.get("stuck"):
-                if self.algorithm_name in HILL_CLIMBING_ALGORITHMS:
-                    self.generator = None
-                    self.auto_play = False
-                    self.searching = False
-                    self.hill_status_message = (
-                        "Đã kẹt tại cực trị cục bộ: không còn neighbor nào có h(n) tốt hơn. "
-                        "Hãy RANDOM hoặc EDIT ma trận để thử lại."
-                    )
-                    self.dialogue.set_status(self.hill_status_message)
-                else:
-                    self._go_gameover("stuck")
+                self._go_gameover("stuck")
                 return
 
             path = step.get("path")
@@ -940,12 +705,13 @@ class GameplayScene(BaseScene):
                     self._go_gameover("stuck")
                 return
 
-            if self.algorithm_name in HILL_CLIMBING_ALGORITHMS:
+            if self.algorithm_name in {"Hill Climbing", "Steepest Ascent HC", "Stochastic HC"}:
                 if self.chosen and self.chosen != (self.player.col, self.player.row):
                     self.searching = False
                     self.follow_path = [self.chosen]
+                    self.auto_play = False
                     self.step_timer = 0.0
-                    self.dialogue.set_status("Đã chọn Next Node. CR7 sẽ di chuyển.")
+                    self.dialogue.set_status("Đã chọn hành động. CR7 sẽ di chuyển.")
                     return
                 self.searching = True
             elif self.algorithm_name == "AND OR SEARCH":
@@ -957,10 +723,7 @@ class GameplayScene(BaseScene):
             else:
                 self.searching = True
 
-            if self.game_state.level in {0, 1} and self.algorithm_name in TRACE_TABLE_ALGORITHMS:
-                self.dialogue.set_status("")
-            else:
-                self.dialogue.set_status("Đang suy nghĩ...")
+            self.dialogue.set_status("Đang suy nghĩ...")
             return
         except Exception as exc:
             self.generator = None
@@ -973,261 +736,18 @@ class GameplayScene(BaseScene):
     def _toggle_random_demo(self):
         if self.grid is None:
             return
-        if self.game_state.level == 0:
-            self._randomize_blind_matrix(self.grid)
-        elif self.game_state.level == 1:
-            self._randomize_informed_matrix(self.grid)
-        elif self.game_state.level == 2:
-            self._randomize_hill_matrix(self.grid)
-            self._apply_hill_climbing_h_values(self.grid)
-        else:
-            self._randomize_value_cells(self.grid)
-            self.grid.reveal_around(*self.grid.start, radius=1)
-        self.matrix_edit_mode = False
-        self._restart_algorithm_on_current_grid(reset_health=True)
-        if self.game_state.level == 2:
-            self.hill_status_message = "Đã tạo ma trận ngẫu nhiên mới. h(n) được tính lại theo Goal."
-        self.dialogue.set_status("Da tao ma tran moi")
-
-    def _toggle_matrix_edit_mode(self):
-        if self.game_state.level not in EDITABLE_MATRIX_LEVELS:
-            return
-        self.matrix_edit_mode = not self.matrix_edit_mode
-        self.auto_play = False
-        message = "EDIT: bấm ô để đổi Safe → Danger → Fire → Wall" if self.matrix_edit_mode else "Đã tắt EDIT"
-        if self.game_state.level == 2:
-            self.hill_status_message = message
-        self.dialogue.set_status(message)
-
-    def _handle_matrix_edit_click(self, mouse_pos):
-        if self.grid is None or not self.grid_rect.collidepoint(mouse_pos):
-            return False
-        col = (mouse_pos[0] - self.grid_rect.left) // self.cell_size
-        row = (mouse_pos[1] - self.grid_rect.top) // self.cell_size
-        pos = (int(col), int(row))
-        if pos not in self.grid.cells:
-            return False
-        if pos in (self.grid.start, self.grid.goal):
-            self.dialogue.set_status("Khong sua o Start/Goal")
-            return True
-
-        cell = self.grid.cells[pos]
-        if self.game_state.level == 0:
-            cell.kind = "grass" if cell.kind == "wall" else "wall"
-            cell.value = None
-            cell.revealed = True
-        elif self.game_state.level == 1:
-            self._cycle_informed_cell(cell)
-        elif self.game_state.level == 2:
-            self._cycle_hill_cell(cell)
-            self._apply_hill_climbing_h_values(self.grid)
-
-        self._restart_algorithm_on_current_grid(reset_health=True)
-        self.matrix_edit_mode = True
-        if self.game_state.level == 2:
-            self.hill_status_message = "Đã cập nhật ma trận và tính lại h(n)."
-        self.dialogue.set_status("Da cap nhat ma tran")
-        return True
-
-    def _cycle_informed_cell(self, cell):
-        if cell.kind == "wall":
-            self._set_value_cell(cell, 8)
-        elif cell.value is None or cell.value > 0:
-            self._set_value_cell(cell, 0)
-        elif cell.value == 0:
-            self._set_value_cell(cell, -25)
-        else:
-            cell.kind = "wall"
-            cell.value = None
-            cell.revealed = True
-
-    def _cycle_hill_cell(self, cell):
-        """Cycle signed Level-3 values: +10 -> +5 -> -5 -> -10 -> wall."""
-        if cell.kind == "wall" or cell.value is None:
-            self._set_value_cell(cell, 10)
-        elif cell.value >= 10:
-            self._set_value_cell(cell, 5)
-        elif cell.value > 0:
-            self._set_value_cell(cell, -5)
-        elif cell.value >= -5:
-            self._set_value_cell(cell, -10)
-        else:
-            cell.kind = "wall"
-            cell.value = None
-            cell.revealed = True
-
-    def _set_value_cell(self, cell, value):
-        cell.value = value
-        cell.revealed = True
-        if value > 0:
-            cell.kind = "path"
-        elif value == 0:
-            cell.kind = "path"
-        else:
-            cell.kind = "fire"
-
-    def _restart_algorithm_on_current_grid(self, reset_health=True):
-        if self.grid is None:
-            return
-        if reset_health:
-            self.game_state.reset_health()
-        self._clear_algorithm_scores()
-        self.player.place_at_grid(*self.grid.start, self.grid_rect.topleft, self.cell_size)
-        self.player._tween_x = None
-        self.player._tween_y = None
-        self.player.state = "idle"
-        self.visited = {self.grid.start}
+        self._randomize_value_cells(self.grid)
+        self.grid.reveal_around(*self.grid.start, radius=1)
+        self.generator = ALGORITHM_FACTORIES[self.algorithm_name](self.grid, start=(self.player.col, self.player.row), health=self.algorithm_health)
+        self.visited = {self.current}
         self.frontier = set()
         self.final_path = []
-        self.follow_path = []
-        self.current = self.grid.start
         self.neighbor_scores = {}
         self.chosen = None
         self.temperature = None
-        self.depth_limit = None
-        self.restarting = False
-        self.algorithm_health = self.game_state.current_health
         self.finished = False
         self.auto_play = False
         self.step_timer = 0.0
-        self.searching = False
-        self.search_trace_rows = []
-        self.last_search_step = None
-        self.algorithm_history = []
-        self.algorithm_history_index = -1
-        self.hill_trace_rows = []
-        self.hill_status_message = ""
-        self.hill_path_history = [self.current] if self.current is not None else []
-        if self.game_state.level == 2:
-            self._apply_hill_climbing_h_values(self.grid)
-        self.generator = ALGORITHM_FACTORIES[self.algorithm_name](
-            self.grid,
-            start=self.current,
-            health=self.algorithm_health,
-        )
-
-    def _randomize_blind_matrix(self, grid):
-        for _ in range(80):
-            for pos, cell in grid.cells.items():
-                cell.value = None
-                cell.revealed = True
-                if pos == grid.start:
-                    cell.kind = "start"
-                elif pos == grid.goal:
-                    cell.kind = "trophy"
-                else:
-                    cell.kind = "wall" if random.random() < 0.18 else "grass"
-            if self._has_route(grid):
-                return
-        for pos, cell in grid.cells.items():
-            if pos == grid.start:
-                cell.kind = "start"
-            elif pos == grid.goal:
-                cell.kind = "trophy"
-            else:
-                cell.kind = "grass"
-                cell.value = None
-
-    def _randomize_informed_matrix(self, grid):
-        value_choices = [-35, -25, -15, 0, 8, 12, 16]
-        weights = [12, 14, 12, 20, 17, 15, 10]
-        for pos, cell in grid.cells.items():
-            cell.revealed = True
-            if pos == grid.start:
-                cell.kind = "start"
-                cell.value = 0
-            elif pos == grid.goal:
-                cell.kind = "trophy"
-                cell.value = 0
-            elif random.random() < 0.13:
-                cell.kind = "wall"
-                cell.value = None
-            else:
-                self._set_value_cell(cell, random.choices(value_choices, weights=weights, k=1)[0])
-
-        for pos in self._simple_route(grid.start, grid.goal):
-            if pos in (grid.start, grid.goal):
-                continue
-            cell = grid.cells[pos]
-            self._set_value_cell(cell, random.choice([0, 8, 12]))
-
-        grid.set_kind(*grid.start, "start")
-        grid.set_kind(*grid.goal, "trophy")
-
-    def _randomize_hill_matrix(self, grid):
-        """Create Level-3 cells with signed values while keeping h(n) separate.
-
-        The signed value changes health/energy when CR7 enters a cell. Hill
-        Climbing still compares candidates only with the shared h(n), so this
-        Level-3 display does not change Levels 1 or 2.
-        """
-        signed_values = [-20, -10, -5, 5, 10, 15, 20]
-        signed_weights = [5, 9, 13, 18, 20, 18, 17]
-        for _ in range(80):
-            for pos, cell in grid.cells.items():
-                cell.revealed = True
-                if pos == grid.start:
-                    cell.kind = "start"
-                    cell.value = 0
-                elif pos == grid.goal:
-                    cell.kind = "trophy"
-                    cell.value = 0
-                elif random.random() < 0.12:
-                    cell.kind = "wall"
-                    cell.value = None
-                else:
-                    self._set_value_cell(
-                        cell,
-                        random.choices(signed_values, weights=signed_weights, k=1)[0],
-                    )
-            if self._has_route(grid):
-                break
-        else:
-            for pos, cell in grid.cells.items():
-                if pos == grid.start:
-                    cell.kind, cell.value = "start", 0
-                elif pos == grid.goal:
-                    cell.kind, cell.value = "trophy", 0
-                else:
-                    cell.kind, cell.value = "path", 0
-                cell.revealed = True
-
-        grid.set_kind(*grid.start, "start")
-        grid.set_kind(*grid.goal, "trophy")
-
-    def _apply_hill_climbing_h_values(self, grid):
-        """Cache the shared h(n) on every cell for display and inspection."""
-        for (col, row), cell in grid.cells.items():
-            cell.h = float(grid.heuristic_value(col, row)) if cell.passable else 0.0
-
-    def _simple_route(self, start, goal):
-        if start is None or goal is None:
-            return []
-        col, row = start
-        route = [(col, row)]
-        while col != goal[0]:
-            col += 1 if goal[0] > col else -1
-            route.append((col, row))
-        while row != goal[1]:
-            row += 1 if goal[1] > row else -1
-            route.append((col, row))
-        return route
-
-    def _has_route(self, grid):
-        if grid.start is None or grid.goal is None:
-            return True
-        queue = deque([grid.start])
-        reached = {grid.start}
-        while queue:
-            current = queue.popleft()
-            if current == grid.goal:
-                return True
-            for cell in grid.neighbors(*current):
-                pos = (cell.col, cell.row)
-                if pos not in reached:
-                    reached.add(pos)
-                    queue.append(pos)
-        return False
 
     def _reveal_belief(self):
         if self.grid is None:
@@ -1300,35 +820,32 @@ class GameplayScene(BaseScene):
         grid.set_kind(*grid.goal, "trophy")
 
     def _set_hill_climbing_dialogue(self, step):
-        current = step.get("current")
-        candidate = step.get("candidate")
         chosen = step.get("chosen")
-        decision = step.get("decision")
-        phase = step.get("phase")
-        current_h = self.grid.heuristic_value(*current) if self.grid and current else None
-        candidate_h = self.grid.heuristic_value(*candidate) if self.grid and candidate else None
-
-        if decision == "loop":
-            message = "Đã dính loop: Next Node đã xuất hiện trong đường đi trước đó."
-        elif decision == "stuck":
-            message = "Không còn neighbor nào có h(n) nhỏ hơn Current Node."
+        current_score = self.grid.heuristic_value(*self.current) if self.grid and self.current else None
+        chosen_score = self.grid.heuristic_value(*chosen) if self.grid and chosen else None
+        if chosen is None:
+            if current_score is None:
+                message = "Đang kiểm tra ô..."
+            else:
+                message = f"Không có ô nào có chi phí thấp hơn {current_score:.0f}, đang tìm hướng khác."
         elif self.algorithm_name == "Hill Climbing":
-            if decision == "reject":
-                message = f"{self._node_label(candidate)} h={candidate_h:.0f} không tốt hơn h={current_h:.0f} → LOẠI."
-            else:
-                message = f"{self._node_label(candidate)} h={candidate_h:.0f} tốt hơn h={current_h:.0f} → NHẬN."
+            message = (
+                f"Ô {chosen} tốt hơn vì h(n)={chosen_score:.0f} < {current_score:.0f}. "
+                "Chọn ô này và di chuyển."
+            )
         elif self.algorithm_name == "Steepest Ascent HC":
-            if phase == "evaluate_all":
-                message = "Đã bật sáng và xuất toàn bộ neighbor để so sánh h(n)."
-            else:
-                selected = chosen or candidate
-                message = f"Chọn {self._node_label(selected)} vì có h(n) nhỏ nhất trong tập neighbor tốt hơn."
+            message = (
+                f"Ô {chosen} là ô tốt nhất trong các láng giềng với h(n)={chosen_score:.0f}. "
+                "Chọn ô tối ưu nhất."
+            )
         else:
-            selected = chosen or candidate
-            message = f"Random chọn {self._node_label(selected)} trong tập neighbor có h(n) tốt hơn."
-
-        self.hill_status_message = message
-        self.dialogue.set_status(message)
+            neighbors = sorted(step.get("neighbor_scores", {}).items(), key=lambda item: item[1])
+            neighbor_text = ", ".join(f"{pos}:{score:.0f}" for pos, score in neighbors[:4])
+            message = (
+                f"Stochastic HC xem xét: {neighbor_text}. "
+                f"Ngẫu nhiên chọn {chosen} với h(n)={chosen_score:.0f}."
+            )
+        self.dialogue.set_text(message, kit_index=self.game_state.kit_index)
 
     def _move_player(self, pos):
         if self.grid is None:
@@ -1343,16 +860,6 @@ class GameplayScene(BaseScene):
         cell = self.grid.get(*pos)
         if cell is None or not cell.passable:
             return False
-        if self.algorithm_name in HILL_CLIMBING_ALGORITHMS and pos in self.hill_path_history:
-            self.generator = None
-            self.auto_play = False
-            self.searching = False
-            self.hill_status_message = (
-                "Đã dính loop: không thể quay lại node đã đi qua. "
-                "Hãy RANDOM hoặc EDIT ma trận rồi chạy lại."
-            )
-            self.dialogue.set_status(self.hill_status_message)
-            return False
         health_delta = self.grid.health_delta(*pos)
         if self.game_state.current_health + health_delta < 0:
             return False
@@ -1360,13 +867,7 @@ class GameplayScene(BaseScene):
         self.current = pos
         self.game_state.current_health += health_delta
         self.algorithm_health = self.game_state.current_health
-        if self.algorithm_name in HILL_CLIMBING_ALGORITHMS:
-            self.hill_path_history.append(pos)
-            # The previous neighborhood leaves the light cone after movement.
-            self.frontier = set()
-            self.neighbor_scores = {}
-            self.chosen = None
-        if self.game_state.level not in {0, 3}:
+        if self.game_state.level != 3:
             self.grid.reveal_around(*pos, radius=1)
         if cell.kind in ("danger", "fire"):
             AudioManager.instance().play_sfx("danger_trigger", volume=0.8)
@@ -1388,10 +889,7 @@ class GameplayScene(BaseScene):
         self.finished = True
         self.game_state.gameover_reason = reason
         if reason == "stuck":
-            if self.game_state.level == 1:
-                self.game_state.suggest_algorithm = "A*"
-            else:
-                self.game_state.suggest_algorithm = "Stochastic HC"
+            self.game_state.suggest_algorithm = "Stochastic HC"
         self.manager.change(C.STATE_GAMEOVER)
 
     # ------------------------------------------------------------------
@@ -1453,18 +951,18 @@ class GameplayScene(BaseScene):
         pygame.draw.rect(surface, self._cell_color(cell.kind, cell.value), rect)
         pygame.draw.rect(surface, (48, 72, 42), rect, 1)
 
-        if (
-            self.game_state.level in {0, 1}
-            and self.algorithm_name in TRACE_TABLE_ALGORITHMS
-            and pos in self.frontier
-        ):
-            self._overlay(surface, rect, (*C.COL_FRONTIER, 95))
-        elif pos in self.frontier and self.algorithm_name in HILL_CLIMBING_ALGORITHMS:
+        if pos in self.frontier and self.algorithm_name in {"Hill Climbing", "Steepest Ascent HC", "Stochastic HC"}:
             self._overlay(surface, rect, (*C.COL_FRONTIER, 100))
         elif pos in self.visited:
             self._overlay(surface, rect, (*C.COL_VISITED, 75))
         if pos in self.final_path:
             self._overlay(surface, rect, (*C.COL_PATH_FINAL, 120))
+
+        if cell.kind not in ("start", "trophy", "wall"):
+            label = str(cell.cost)
+            text_color = C.COL_BLACK if cell.kind == "path" and cell.value is None else C.COL_CREAM_TEXT
+            draw_text(surface, label, (rect.centerx, rect.centery - 11), size=18,
+                      color=text_color, align="center")
 
         highlighted_pos = (self.player.col, self.player.row)
         if pos == highlighted_pos:
@@ -1484,25 +982,17 @@ class GameplayScene(BaseScene):
             )
             surface.blit(trophy, trophy.get_rect(center=rect.center))
 
-        if self._should_draw_cell_value(cell):
-            if self.game_state.level == 2 and self.algorithm_name in HILL_CLIMBING_ALGORITHMS:
-                h_value = self.grid.heuristic_value(cell.col, cell.row)
-                signed_value = cell.value if cell.value is not None else 0
-                value_label = f"{signed_value:+d}"
-                text_color = C.COL_BLACK if cell.kind in {"path", "start", "trophy"} else C.COL_CREAM_TEXT
-                draw_text(surface, value_label, (rect.centerx, rect.centery - 9), size=17,
-                          color=text_color, align="center")
-                draw_text(surface, f"h={h_value:.0f}", (rect.left + 4, rect.top + 3), size=10,
-                          color=text_color, align="left", shadow=False)
-            else:
-                label = str(cell.value if cell.value is not None else cell.cost)
-                text_color = C.COL_BLACK if cell.value == 0 else C.COL_CREAM_TEXT
-                draw_text(surface, label, (rect.centerx, rect.centery - 11), size=18,
-                          color=text_color, align="center")
-
         if not cell.revealed and self.game_state.level == 3:
             if pos not in (self.grid.start, self.grid.goal):
                 draw_text(surface, "?", rect.center, size=24, color=C.COL_CREAM_TEXT, align="center")
+        elif self.algorithm_name in {"BFS", "DFS", "IDS"}:
+            if cell.kind not in ("start", "trophy", "wall"):
+                draw_text(surface, "0", (rect.centerx, rect.centery - 11), size=16,
+                          color=C.COL_CREAM_TEXT, align="center")
+        elif cell.kind not in ("start", "trophy", "wall"):
+            label = str(cell.cost)
+            draw_text(surface, label, (rect.centerx, rect.centery - 11), size=16,
+                      color=C.COL_CREAM_TEXT, align="center")
 
         if self.algorithm_name == "AND OR SEARCH" and self.and_or_dark:
             self._overlay(surface, rect, (0, 0, 0, 180))
@@ -1517,15 +1007,12 @@ class GameplayScene(BaseScene):
         if self.algorithm_name == "AND OR SEARCH" and pos in self.and_or_path:
             self._overlay(surface, rect, (170, 250, 180, 180))
 
-        if self.algorithm_name in HILL_CLIMBING_ALGORITHMS:
+        if self.algorithm_name in {"Hill Climbing", "Steepest Ascent HC", "Stochastic HC"}:
             if pos not in self.frontier and pos != self.current and pos != self.chosen and pos not in self.final_path:
                 self._overlay(surface, rect, (0, 0, 0, 150))
 
         if self.level4_tab == 2 and pos == self.current:
             self._overlay(surface, rect, (*C.COL_HIGHLIGHT_PURPLE, 180))
-
-        if self._should_dim_level_one_cell(pos):
-            self._overlay(surface, rect, (0, 0, 0, 178))
 
         if not cell.revealed and self.game_state.level != 3:
             self._overlay(surface, rect, (*C.COL_FOG, 185))
@@ -1562,333 +1049,10 @@ class GameplayScene(BaseScene):
         inner = rect.inflate(-8, -8)
         pygame.draw.rect(surface, C.COL_HIGHLIGHT_PURPLE, inner, 2, border_radius=4)
 
-    def _should_draw_hill_climbing_table(self):
-        return self.game_state.level == 2 and self.algorithm_name in HILL_CLIMBING_ALGORITHMS
-
-    def _record_hill_climbing_step(self, step):
-        current = step.get("current")
-        current_h = self.grid.heuristic_value(*current) if self.grid and current else None
-        scores = step.get("neighbor_scores", {})
-        improving = set(step.get("improving_neighbors", []))
-        chosen = step.get("chosen") or (step.get("candidate") if step.get("loop") else None)
-        phase = step.get("phase")
-        decision = step.get("decision")
-
-        def append_row(next_pos, action):
-            next_h = scores.get(next_pos) if next_pos is not None else None
-            self.hill_trace_rows.append({
-                "current": current,
-                "next": next_pos,
-                "current_h": current_h,
-                "next_h": next_h,
-                "action": action,
-            })
-
-        if self.algorithm_name == "Hill Climbing":
-            candidate = step.get("candidate")
-            action = {
-                "reject": "LOẠI",
-                "accept": "NHẬN",
-                "loop": "LOOP",
-                "stuck": "KẸT",
-            }.get(decision, "XÉT")
-            append_row(candidate, action)
-
-        elif self.algorithm_name == "Steepest Ascent HC":
-            if phase == "evaluate_all":
-                for pos in scores:
-                    append_row(pos, "ỨNG VIÊN" if pos in improving else "LOẠI")
-            elif decision in {"best", "loop"} and chosen is not None:
-                updated = False
-                for row in reversed(self.hill_trace_rows):
-                    if row["current"] == current and row["next"] == chosen:
-                        row["action"] = "LOOP" if decision == "loop" else "CHỌN TỐT NHẤT"
-                        updated = True
-                        break
-                if not updated:
-                    append_row(chosen, "LOOP" if decision == "loop" else "CHỌN TỐT NHẤT")
-            elif decision == "stuck":
-                append_row(None, "KẸT")
-
-        else:  # Stochastic HC
-            for pos in scores:
-                if pos == chosen:
-                    action = "LOOP" if decision == "loop" else "RANDOM → NHẬN"
-                elif pos in improving:
-                    action = "TRONG TẬP"
-                else:
-                    action = "LOẠI"
-                append_row(pos, action)
-            if not scores and decision == "stuck":
-                append_row(None, "KẸT")
-
-        self.hill_trace_rows = self.hill_trace_rows[-12:]
-
-    def _draw_hill_climbing_table(self, surface):
-        panel = pygame.Rect(C.DIALOG_PANEL_RECT)
-        draw_wood_panel(surface, panel, border=5, corner=10, fill=(34, 28, 20))
-        inner = panel.inflate(-14, -12)
-        header_h = 20
-        status_h = 16
-        split_x = inner.centerx
-
-        pygame.draw.rect(surface, (232, 224, 198), inner, border_radius=3)
-        pygame.draw.rect(surface, C.COL_WOOD_DARK, inner, 2, border_radius=3)
-        pygame.draw.line(surface, C.COL_WOOD_DARK, (split_x, inner.top), (split_x, inner.bottom - status_h), 2)
-        pygame.draw.line(surface, C.COL_WOOD_DARK, (inner.left, inner.top + header_h), (inner.right, inner.top + header_h), 2)
-        pygame.draw.line(surface, C.COL_WOOD_DARK, (inner.left, inner.bottom - status_h), (inner.right, inner.bottom - status_h), 1)
-
-        draw_text(surface, "Current Node", (inner.left + 10, inner.top + 2), size=13, color=C.COL_BLACK, shadow=False)
-        draw_text(surface, "Next Node", (split_x + 10, inner.top + 2), size=13, color=C.COL_BLACK, shadow=False)
-
-        rows = self.hill_trace_rows[-4:]
-        content_top = inner.top + header_h
-        content_bottom = inner.bottom - status_h
-        row_h = max(12, (content_bottom - content_top) // 4)
-        for index, row in enumerate(rows):
-            y = content_top + index * row_h
-            if index:
-                pygame.draw.line(surface, (150, 136, 110), (inner.left, y), (inner.right, y), 1)
-            current_text = self._hill_node_text(row.get("current"), row.get("current_h"))
-            next_text = self._hill_node_text(row.get("next"), row.get("next_h"))
-            action = row.get("action", "")
-            if action:
-                next_text = f"{next_text}  |  {action}"
-            action_color = (150, 35, 35) if action in {"LOẠI", "LOOP", "KẸT"} else (24, 100, 45)
-            draw_text(surface, current_text, (inner.left + 10, y + 1), size=10, color=C.COL_BLACK, shadow=False)
-            draw_text(surface, next_text, (split_x + 10, y + 1), size=10,
-                      color=action_color if action else C.COL_BLACK, shadow=False)
-
-        status = self.hill_status_message
-        if not status:
-            status = {
-                "Hill Climbing": "Simple: xét từng neighbor; tốt hơn thì NHẬN, ngược lại LOẠI.",
-                "Steepest Ascent HC": "Steepest: bật sáng toàn bộ neighbor rồi chọn h(n) nhỏ nhất.",
-                "Stochastic HC": "Stochastic: random trong tập neighbor có h(n) tốt hơn.",
-            }.get(self.algorithm_name, "")
-        draw_text(surface, status, (inner.left + 8, inner.bottom - status_h + 2), size=9,
-                  color=C.COL_BLACK, max_width=inner.width - 16, shadow=False)
-
-    def _hill_node_text(self, pos, score):
-        if pos is None:
-            return "-"
-        label = self._node_label(pos)
-        if score is None and self.grid is not None:
-            score = self.grid.heuristic_value(*pos)
-        return f"{label}  h={score:.0f}" if score is not None else label
-
-    def _should_draw_blind_search_table(self):
-        return (
-            self.game_state.level in {0, 1}
-            and self.algorithm_name in TRACE_TABLE_ALGORITHMS
-            and bool(self.search_trace_rows)
-        )
-
-    def _record_blind_search_step(self, step):
-        self.last_search_step = step
-        self.search_trace_rows.append({
-            "node": step.get("current"),
-            "frontier": list(step.get("frontier", [])),
-            "reached": list(step.get("reached_order", step.get("visited", []))),
-            "depth_limit": step.get("depth_limit"),
-            "restarting": step.get("restarting", False),
-            "children": list(step.get("children", [])),
-            "added_children": list(step.get("added_children", [])),
-            "scores": dict(step.get("scores", {})),
-        })
-        self.search_trace_rows = self.search_trace_rows[-4:]
-
-    def _store_algorithm_progress_step(self, step):
-        if self.algorithm_history_index < len(self.algorithm_history) - 1:
-            self.algorithm_history = self.algorithm_history[:self.algorithm_history_index + 1]
-        self.algorithm_history.append(step)
-        self.algorithm_history_index = len(self.algorithm_history) - 1
-
-    def _restore_algorithm_progress(self, index):
-        if not self.algorithm_history:
-            return
-        self.algorithm_history_index = max(0, min(index, len(self.algorithm_history) - 1))
-        step = self.algorithm_history[self.algorithm_history_index]
-        self.follow_path = []
-        self.searching = True
-        self.finished = False
-        self.player.place_at_grid(*self.grid.start, self.grid_rect.topleft, self.cell_size)
-        self.player._tween_x = None
-        self.player._tween_y = None
-        self.player.state = "idle"
-        self.current = step.get("current") or self.grid.start
-        self.frontier = set(step.get("frontier", []))
-        self.visited = set(step.get("visited", self.visited))
-        self.final_path = list(step.get("path") or [])
-        self.depth_limit = step.get("depth_limit", self.depth_limit)
-        self.restarting = step.get("restarting", False)
-        self.last_search_step = step
-        self._apply_score_snapshot(step.get("scores", {}))
-        self.search_trace_rows = []
-        for old_step in self.algorithm_history[max(0, self.algorithm_history_index - 3):self.algorithm_history_index + 1]:
-            self._record_blind_search_step(old_step)
-        self.dialogue.set_status(f"Buoc {self.algorithm_history_index + 1}/{len(self.algorithm_history)}")
-
-    def _apply_score_snapshot(self, scores):
-        if self.grid is None:
-            return
-        self._clear_algorithm_scores()
-        for pos, data in scores.items():
-            if pos not in self.grid.cells:
-                continue
-            cell = self.grid.cells[pos]
-            cell.g = data.get("g", 0)
-            cell.h = data.get("h", 0)
-            cell.f = data.get("f", 0)
-
-    def _draw_blind_search_table(self, surface):
-        panel = pygame.Rect(C.DIALOG_PANEL_RECT)
-        draw_wood_panel(surface, panel, border=5, corner=10, fill=(34, 28, 20))
-        inner = panel.inflate(-14, -12)
-        header_h = 20
-        col_w = [122, 380, inner.width - 122 - 380]
-        x0 = inner.left
-        x1 = x0 + col_w[0]
-        x2 = x1 + col_w[1]
-
-        pygame.draw.rect(surface, (232, 224, 198), inner, border_radius=3)
-        pygame.draw.rect(surface, C.COL_WOOD_DARK, inner, 2, border_radius=3)
-        for x in (x1, x2):
-            pygame.draw.line(surface, C.COL_WOOD_DARK, (x, inner.top), (x, inner.bottom), 2)
-        pygame.draw.line(surface, C.COL_WOOD_DARK, (inner.left, inner.top + header_h), (inner.right, inner.top + header_h), 2)
-
-        headers = ("Node", "Frontier", "Reached")
-        xs = (x0 + 8, x1 + 8, x2 + 8)
-        for text, x in zip(headers, xs):
-            draw_text(surface, text, (x, inner.top + 2), size=13, color=C.COL_BLACK, shadow=False)
-
-        rows = self.search_trace_rows[-2:]
-        detail_h = 16
-        row_h = (inner.height - header_h - detail_h) // max(1, len(rows))
-        y = inner.top + header_h
-        for row in rows:
-            pygame.draw.line(surface, (110, 96, 70), (inner.left, y), (inner.right, y), 1)
-            self._draw_search_table_text(surface, self._trace_node_text(row), (x0 + 8, y + 4), col_w[0] - 14)
-            self._draw_search_table_text(surface, self._node_list_text(row["frontier"], frontier=True, scores=row.get("scores")), (x1 + 8, y + 4), col_w[1] - 14)
-            self._draw_search_table_text(surface, self._node_list_text(row["reached"], reached=True, scores=row.get("scores")), (x2 + 8, y + 4), col_w[2] - 14)
-            y += row_h
-
-        if self.last_search_step:
-            detail = self._blind_step_detail(self.last_search_step)
-            draw_text(surface, detail, (inner.left + 10, inner.bottom - 14), size=10,
-                      color=C.COL_BLACK, max_width=inner.width - 20, shadow=False)
-
-    def _draw_search_table_text(self, surface, text, pos, max_width):
-        draw_text(surface, text, pos, size=11, color=C.COL_BLACK,
-                  max_width=max_width, shadow=False)
-
-    def _trace_node_text(self, row):
-        if row["restarting"]:
-            return f"IDS d={row['depth_limit']}"
-        if self.algorithm_name in INFORMED_SEARCH_ALGORITHMS:
-            return self._scored_node_label(row["node"], row.get("scores", {}))
-        return self._node_label(row["node"])
-
-    def _node_list_text(self, values, frontier=False, reached=False, scores=None):
-        if not values:
-            return "{ }" if frontier else "[ ]"
-        if frontier and self.algorithm_name in {"DFS", "IDS"}:
-            # Stack top is the rightmost item internally; display it first.
-            values = list(reversed(values))
-        if self.algorithm_name in INFORMED_SEARCH_ALGORITHMS:
-            scores = scores or {}
-            labels = [self._scored_node_label(pos, scores) for pos in values]
-            limit = 7
-        else:
-            labels = [self._node_label(pos) for pos in values]
-            limit = 12
-        open_char, close_char = ("{", "}") if frontier else ("[", "]")
-        text = ", ".join(labels[:limit])
-        if len(labels) > limit:
-            text += ", ..."
-        return f"{open_char}{text}{close_char}"
-
-    def _blind_step_detail(self, step):
-        if self.algorithm_name in INFORMED_SEARCH_ALGORITHMS:
-            return self._informed_step_detail(step)
-        current = self._node_label(step.get("current"))
-        children = [self._node_label(pos) for pos in step.get("children", [])]
-        added = [self._node_label(pos) for pos in step.get("added_children", [])]
-        structure = "queue" if self.algorithm_name == "BFS" else "stack"
-        if self.algorithm_name == "IDS":
-            structure = f"stack, depth={step.get('depth_limit')}"
-        children_text = ", ".join(children) if children else "khong co"
-        added_text = ", ".join(added) if added else "khong them moi"
-        return f"Mo rong {current}; sinh con L,R,U,D: {children_text}; them vao {structure}: {added_text}."
-
-    def _informed_step_detail(self, step):
-        scores = step.get("scores", {})
-        current = step.get("current")
-        current_text = self._full_score_label(current, scores)
-        children = [self._full_score_label(pos, scores) for pos in step.get("children", [])]
-        added = [self._full_score_label(pos, scores) for pos in step.get("added_children", [])]
-        priority = {"UCS": "g(n)", "Greedy": "h(n)", "A*": "f(n)"}.get(self.algorithm_name, "f(n)")
-        children_text = ", ".join(children) if children else "khong co"
-        added_text = ", ".join(added) if added else "khong them moi"
-        return (
-            f"{self.algorithm_name} uu tien {priority}. Current {current_text}. "
-            f"Sinh L,R,U,D: {children_text}. Frontier them/cap nhat: {added_text}."
-        )
-
-    def _scored_node_label(self, pos, scores):
-        label = self._node_label(pos)
-        data = scores.get(pos)
-        if not data:
-            return label
-        key = {"UCS": "g", "Greedy": "h", "A*": "f"}.get(self.algorithm_name, "f")
-        return f"{label} {key}={data.get(key, 0):.0f}"
-
-    def _full_score_label(self, pos, scores):
-        label = self._node_label(pos)
-        data = scores.get(pos)
-        if not data:
-            return label
-        return (
-            f"{label}(g={data.get('g', 0):.0f},"
-            f"h={data.get('h', 0):.0f},"
-            f"f={data.get('f', 0):.0f})"
-        )
-
-    def _node_label(self, pos):
-        if pos is None:
-            return "-"
-        if self.grid is not None:
-            if pos == self.grid.start:
-                return "S"
-            if pos == self.grid.goal:
-                return "G"
-        col, row = pos
-        index = row * self.grid.cols + col if self.grid is not None else row * 20 + col
-        letters = []
-        index += 1
-        while index:
-            index, rem = divmod(index - 1, 26)
-            letters.append(chr(ord("A") + rem))
-        return "".join(reversed(letters))
-
     def _draw_side_panel(self, surface):
         panel = C.SIDE_PANEL_RECT
         draw_wood_panel(surface, panel, border=5, corner=8, fill=(54, 32, 24))
-        hill_panel = self.game_state.level == 2 and self.algorithm_name in HILL_CLIMBING_ALGORITHMS
-        if hill_panel:
-            current_h = self.grid.heuristic_value(*self.current) if self.grid and self.current else 0
-            draw_text(surface, self.algorithm_name, (panel.centerx, panel.top + 12),
-                      size=14, color=C.COL_GOLD_BRIGHT, align="center")
-            draw_text(surface, f"Current: {self._node_label(self.current)} | h(n)={current_h:.0f}",
-                      (panel.centerx, panel.top + 38), size=12,
-                      color=C.COL_CREAM_TEXT, align="center", shadow=False)
-            y = panel.top + 64
-            for pos, score in sorted(self.neighbor_scores.items(), key=lambda item: item[1])[:2]:
-                color = C.COL_GOLD_BRIGHT if pos == self.chosen else C.COL_CREAM_TEXT
-                draw_text(surface, f"{self._node_label(pos)}: h(n)={score:.0f}",
-                          (panel.left + 24, y), size=11, color=color, shadow=False)
-                y += 18
-        elif self.neighbor_scores:
+        if self.neighbor_scores:
             draw_text(surface, "DANH GIA", (panel.centerx, panel.top + 12),
                       size=15, color=C.COL_CREAM_TEXT, align="center")
             if self.algorithm_name in {"BFS", "DFS", "IDS"}:
@@ -1916,18 +1080,14 @@ class GameplayScene(BaseScene):
                                   (panel.left + 202, panel.top + 34), size=12,
                                   color=C.COL_GOLD_BRIGHT)
             y = panel.top + 64
-            if self.algorithm_name in HILL_CLIMBING_ALGORITHMS:
+            if self.algorithm_name in {"Hill Climbing", "Steepest Ascent HC", "Stochastic HC"}:
                 sorted_neighbors = sorted(self.neighbor_scores.items(), key=lambda item: item[1])
             else:
                 sorted_neighbors = sorted(self.neighbor_scores.items(), key=lambda item: item[1], reverse=True)
 
             for pos, score in sorted_neighbors[:5]:
                 color = C.COL_GOLD_BRIGHT if pos == self.chosen else C.COL_CREAM_TEXT
-                if self.algorithm_name in HILL_CLIMBING_ALGORITHMS:
-                    label = f"{self._node_label(pos)}: h(n)={score:.0f}"
-                else:
-                    label = f"{pos}: {score}"
-                draw_text(surface, label, (panel.left + 22, y), size=13, color=color)
+                draw_text(surface, f"{pos}: {score}", (panel.left + 22, y), size=13, color=color)
                 y += 24
             if self.temperature is not None:
                 draw_text(surface, f"Temp: {self.temperature:.1f}", (panel.left + 22, y + 4), size=12, color=C.COL_GOLD_BRIGHT)
@@ -1956,13 +1116,9 @@ class GameplayScene(BaseScene):
                         draw_text(surface, f"f(n): {getattr(current_cell, 'f', 0):.0f}",
                                   (panel.left + 202, panel.top + 82), size=12,
                                   color=C.COL_GOLD_BRIGHT)
-            elif self.algorithm_name in HILL_CLIMBING_ALGORITHMS:
-                current_h = self.grid.heuristic_value(*self.current) if self.grid and self.current else 0
-                draw_text(surface, f"Current Node: {self._node_label(self.current)} | h(n)={current_h:.0f}",
+            elif self.algorithm_name in {"Hill Climbing", "Steepest Ascent HC", "Stochastic HC"}:
+                draw_text(surface, "Hill climbing dung heuristic local search.",
                           (panel.centerx, panel.top + 62), size=11,
-                          color=C.COL_CREAM_TEXT, align="center", shadow=False)
-                draw_text(surface, "Chỉ vùng neighbor hiện tại được chiếu sáng.",
-                          (panel.centerx, panel.top + 82), size=10,
                           color=C.COL_CREAM_TEXT, align="center", shadow=False)
             draw_text(surface, "Trang thai:", (panel.centerx, panel.top + 110),
                       size=14, color=C.COL_CREAM_TEXT, align="center")
@@ -1970,36 +1126,24 @@ class GameplayScene(BaseScene):
             draw_text(surface, status, (panel.centerx, panel.top + 134),
                       size=15, color=C.COL_GOLD_BRIGHT, align="center")
 
-        if self.game_state.level != 0:
-            health_ratio = max(0.0, min(1.0, self.game_state.current_health / max(1, self.game_state.max_health)))
-            bar_rect = pygame.Rect(24, 20, 180, 16)
-            pygame.draw.rect(surface, (70, 30, 20), bar_rect)
-            fill_width = int(bar_rect.width * health_ratio)
-            pygame.draw.rect(surface, (90, 180, 95) if health_ratio > 0.5 else (220, 120, 70), pygame.Rect(bar_rect.left, bar_rect.top, fill_width, bar_rect.height))
-            pygame.draw.rect(surface, C.COL_GOLD_BRIGHT, bar_rect, 2)
-            draw_text(surface, f"Máu: {self.game_state.current_health}/{self.game_state.max_health}", (bar_rect.centerx, bar_rect.top - 10), size=11, color=C.COL_CREAM_TEXT, align="center")
-        if self.game_state.level not in EDITABLE_MATRIX_LEVELS:
-            draw_text(surface, "Mui ten: dieu khien", (panel.centerx, panel.bottom - 32),
-                      size=12, color=C.COL_CREAM_TEXT, align="center")
+        health_ratio = max(0.0, min(1.0, self.game_state.current_health / max(1, self.game_state.max_health)))
+        bar_rect = pygame.Rect(24, 20, 180, 16)
+        pygame.draw.rect(surface, (70, 30, 20), bar_rect)
+        fill_width = int(bar_rect.width * health_ratio)
+        pygame.draw.rect(surface, (90, 180, 95) if health_ratio > 0.5 else (220, 120, 70), pygame.Rect(bar_rect.left, bar_rect.top, fill_width, bar_rect.height))
+        pygame.draw.rect(surface, C.COL_GOLD_BRIGHT, bar_rect, 2)
+        draw_text(surface, f"Máu: {self.game_state.current_health}/{self.game_state.max_health}", (bar_rect.centerx, bar_rect.top - 10), size=11, color=C.COL_CREAM_TEXT, align="center")
+        draw_text(surface, "Mui ten: dieu khien", (panel.centerx, panel.bottom - 32),
+                  size=12, color=C.COL_CREAM_TEXT, align="center")
 
         if self.back_button is not None:
             self.back_button.draw(surface)
-        if self.progress_prev_button is not None:
-            self.progress_prev_button.draw(surface)
-        if self.progress_next_button is not None:
-            self.progress_next_button.draw(surface)
-        if self.progress_auto_button is not None:
-            self.progress_auto_button.text = "STOP" if self.auto_play else "AUTO"
-            self.progress_auto_button.draw(surface)
         if self.level4_toggle is not None:
             self.level4_toggle.draw(surface)
         if self.and_or_button is not None:
             self.and_or_button.draw(surface)
         if self.randomize_button is not None:
             self.randomize_button.draw(surface)
-        if self.matrix_edit_button is not None:
-            self.matrix_edit_button.text = "EDIT ON" if self.matrix_edit_mode else "EDIT"
-            self.matrix_edit_button.draw(surface)
         if self.belief_button is not None:
             self.belief_button.draw(surface)
 
@@ -2009,44 +1153,23 @@ class GameplayScene(BaseScene):
             if button.text == self.algorithm_name:
                 pygame.draw.rect(surface, C.COL_GOLD_BRIGHT, button.rect, 2, border_radius=6)
 
-    def _should_draw_cell_value(self, cell):
-        if self.game_state.level == 0:
-            return False
-        if self.game_state.level == 2 and self.algorithm_name in HILL_CLIMBING_ALGORITHMS:
-            return cell.kind != "wall"
-        return cell.kind not in ("start", "trophy", "wall")
-
-    def _should_dim_level_one_cell(self, pos):
-        if self.game_state.level != 0 or self.algorithm_name not in BLIND_SEARCH_ALGORITHMS:
-            return False
-        if not self.last_search_step:
-            return False
-        lit = set(self.last_search_step.get("reached_order", []))
-        lit.update(self.last_search_step.get("frontier", []))
-        if self.current is not None:
-            lit.add(self.current)
-        lit.update(self.final_path)
-        return pos not in lit
-
     def _cell_color(self, kind, value=None):
-        special = {
-            "wall": C.COL_WALL_STONE,
-            "start": (244, 218, 126),
-            "trophy": (210, 184, 96),
-            "danger": C.COL_DANGER_RED,
-            "fire": (120, 48, 36),
-        }
-        if kind in special:
-            return special[kind]
         if value is not None:
             if value > 0:
                 return (110, 180, 110)
             if value == 0:
-                return C.COL_SILVER
-            return C.COL_DANGER_RED
+                return C.COL_PATH_GREY
+            if value <= -4:
+                return C.COL_DANGER_RED
+            return C.COL_SILVER
         return {
             "grass": C.COL_GRASS_LIGHT,
             "path": C.COL_PATH_GREY,
+            "danger": C.COL_DANGER_RED,
+            "fire": (120, 48, 36),
+            "wall": C.COL_WALL_STONE,
+            "start": (244, 218, 126),
+            "trophy": (210, 184, 96),
         }.get(kind, C.COL_GRASS_DARK)
 
     def _overlay(self, surface, rect, color):

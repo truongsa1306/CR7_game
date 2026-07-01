@@ -13,6 +13,7 @@ from scenes.intro_scene import IntroScene
 from scenes.level_select_scene import LevelSelectScene
 from scenes.caro_scene import CaroScene
 from scenes.eight_queens_scene import EightQueensScene
+from scenes.and_or_scene import AndOrSearchScene
 from scenes.levelup_scene import LevelUpScene
 from scenes.victory_scene import VictoryScene
 from systems.game_state import GameState
@@ -28,6 +29,7 @@ def build_scene_manager():
     manager.register(C.STATE_BELIEF, BeliefSearchScene(manager, game_state))
     manager.register(C.STATE_CARO, CaroScene(manager, game_state))
     manager.register(C.STATE_EIGHT_QUEENS, EightQueensScene(manager, game_state))
+    manager.register(C.STATE_AND_OR, AndOrSearchScene(manager, game_state))
     manager.register(C.STATE_LEVELUP, LevelUpScene(manager, game_state))
     manager.register(C.STATE_GAMEOVER, GameOverScene(manager, game_state))
     manager.register(C.STATE_VICTORY, VictoryScene(manager, game_state))
