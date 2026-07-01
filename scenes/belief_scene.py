@@ -32,7 +32,7 @@ ALGORITHM_GROUPS = (
 )
 
 OBSERVATION_LABELS = ("KHÔNG QS", "QS 1 PHẦN")
-COUNT_OPTIONS = (2, 3, 4)
+COUNT_OPTIONS = (2, 3, 4, 5, 6)
 
 MAP_AREA = pygame.Rect(24, 76, 646, 336)
 CONTROL_PANEL = pygame.Rect(688, 76, 312, 336)
@@ -649,7 +649,7 @@ class BeliefSearchScene(BaseScene):
         if not self.worlds:
             draw_text(surface, "TRẠNG THÁI NHÂN VẬT = ?", (MAP_AREA.centerx, MAP_AREA.top + 95),
                       size=24, color=C.COL_GOLD_BRIGHT, align="center")
-            draw_text(surface, "Chọn 2, 3 hoặc 4 rồi nhấn RANDOM hoặc BELIEF +", (MAP_AREA.centerx, MAP_AREA.top + 145),
+            draw_text(surface, "Chọn 2 đến 6 rồi nhấn RANDOM hoặc BELIEF +", (MAP_AREA.centerx, MAP_AREA.top + 145),
                       size=16, color=C.COL_CREAM_TEXT, align="center")
             draw_text(surface, "RANDOM tạo ma trận ẩn/quan sát một phần. BELIEF + sẽ khui hết rồi bắt đầu giải.",
                       (MAP_AREA.centerx, MAP_AREA.top + 185), size=13,

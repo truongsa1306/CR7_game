@@ -19,8 +19,8 @@ MIN_QUEENS = 4
 MAX_QUEENS = 8
 DEFAULT_QUEENS = 8
 BOARD_X = 40
-BOARD_Y = 116
-BOARD_SIZE = 320
+BOARD_Y = 124
+BOARD_SIZE = 304
 AUTO_STEP_DELAY = 0.2
 
 ALGORITHMS = [
@@ -112,12 +112,34 @@ def first_solution(n):
     return board.copy() if dfs(0) else [-1] * n
 
 
-def backtracking_steps(n):
-    board = [-1] * n
+def _normalize_seed_board(n, initial_board=None):
+    if initial_board is None:
+        return [-1] * n
+    board = list(initial_board[:n])
+    board.extend([-1] * (n - len(board)))
+    return [col if isinstance(col, int) and 0 <= col < n else -1 for col in board]
+
+
+def _preferred_values(values, preferred):
+    ordered = sorted(values)
+    if preferred in ordered:
+        ordered.remove(preferred)
+        ordered.insert(0, preferred)
+    return ordered
+
+
+def backtracking_steps(n, initial_board=None):
+    seed = _normalize_seed_board(n, initial_board)
+    board = seed.copy()
+    placed = sum(col != -1 for col in seed)
     steps = [{
         "board": board.copy(),
-        "status": "Khoi tao Backtracking",
+        "status": (
+            f"Khoi tao Backtracking tu {placed} quan hau da dat"
+            if placed else "Khoi tao Backtracking"
+        ),
         "action": "init",
+        "seeded": bool(placed),
     }]
 
     def dfs(row):
@@ -128,7 +150,10 @@ def backtracking_steps(n):
                 "action": "solution",
             })
             return True
-        for col in range(n):
+
+        preferred = seed[row]
+        board[row] = -1
+        for col in _preferred_values(range(n), preferred):
             steps.append({
                 "board": board.copy(),
                 "status": f"Thu Q{row + 1}={col + 1}",
@@ -169,18 +194,24 @@ def backtracking_steps(n):
     return steps
 
 
-def forward_checking_steps(n):
-    board = [-1] * n
+def forward_checking_steps(n, initial_board=None):
+    seed = _normalize_seed_board(n, initial_board)
+    board = seed.copy()
+    placed = sum(col != -1 for col in seed)
     domains = [set(range(n)) for _ in range(n)]
     steps = [{
         "board": board.copy(),
-        "status": "Khoi tao Forward Checking",
+        "status": (
+            f"Khoi tao Forward Checking tu {placed} quan hau da dat"
+            if placed else "Khoi tao Forward Checking"
+        ),
         "action": "init",
         "domains": [domain.copy() for domain in domains],
+        "seeded": bool(placed),
     }]
 
-    def prune(domains, row, col):
-        new_domains = [domain.copy() for domain in domains]
+    def prune(current_domains, row, col):
+        new_domains = [domain.copy() for domain in current_domains]
         for r in range(row + 1, n):
             new_domains[r].discard(col)
             offset = r - row
@@ -190,17 +221,20 @@ def forward_checking_steps(n):
                 return None
         return new_domains
 
-    def dfs(row, domains):
+    def dfs(row, current_domains):
         if row == n:
             steps.append({
                 "board": board.copy(),
                 "status": "Da tim giai phap bang Forward Checking",
                 "action": "solution",
-                "domains": [domain.copy() for domain in domains],
+                "domains": [domain.copy() for domain in current_domains],
             })
             return True
-        for col in sorted(domains[row]):
-            domain_before = [domain.copy() for domain in domains]
+
+        preferred = seed[row]
+        board[row] = -1
+        for col in _preferred_values(current_domains[row], preferred):
+            domain_before = [domain.copy() for domain in current_domains]
             steps.append({
                 "board": board.copy(),
                 "status": f"Thu Q{row + 1}={col + 1}",
@@ -219,7 +253,7 @@ def forward_checking_steps(n):
                     "domains": domain_before,
                 })
                 continue
-            new_domains = prune(domains, row, col)
+            new_domains = prune(current_domains, row, col)
             board[row] = col
             if new_domains is not None:
                 steps.append({
@@ -259,21 +293,28 @@ def forward_checking_steps(n):
     return steps
 
 
-def min_conflicts_steps(n, max_steps=None, max_restarts=20):
+def min_conflicts_steps(n, max_steps=None, max_restarts=20, initial_board=None):
     steps = []
     steps_per_restart = max_steps or max(120, n * n * 20)
+    seed = _normalize_seed_board(n, initial_board)
+    placed = sum(col != -1 for col in seed)
 
     for restart in range(max_restarts):
-        board = [random.randrange(n) for _ in range(n)]
-        label = "Bat dau Min-Conflict voi cau hinh ngau nhien"
-        if restart:
-            label = f"Restart Min-Conflict lan {restart + 1}"
+        if restart == 0 and placed:
+            board = [col if col != -1 else random.randrange(n) for col in seed]
+            label = f"Bat dau Min-Conflict tu {placed} quan da dat; bo sung cac hang con thieu"
+        else:
+            board = [random.randrange(n) for _ in range(n)]
+            label = "Bat dau Min-Conflict voi cau hinh ngau nhien"
+            if restart:
+                label = f"Restart Min-Conflict lan {restart + 1}"
         steps.append({
             "board": board.copy(),
             "status": label,
             "action": "init" if restart == 0 else "restart",
             "total_conflicts": total_conflicts(board),
             "restart": restart,
+            "seeded": bool(placed and restart == 0),
         })
 
         def conflicts(row, col):
@@ -517,7 +558,7 @@ class EightQueensScene(BaseScene):
         draw_text(surface, "Trang thai:", (panel.left + 18, y), size=13, color=C.COL_GOLD_BRIGHT)
         draw_text(surface, self.steps[self.step_idx]["status"] if self.steps else self.status,
                   (panel.left + 18, y + 22), size=13, color=C.COL_CREAM_TEXT, max_width=panel.width - 36)
-        draw_text(surface, "PREV/RUN = lui/tien 1 buoc AI, AUTO = tu chay, RESET = tu choi",
+        draw_text(surface, "PREV/RUN = lui/tien AI, AUTO = tu chay, RESET = xoa ban co",
                   (panel.left + 18, panel.top + 314), size=11, color=C.COL_CREAM_TEXT, max_width=panel.width - 36)
 
     def _draw_size_selector(self, surface, panel):
@@ -534,7 +575,7 @@ class EightQueensScene(BaseScene):
                       align="center", shadow=False)
 
     def _draw_bottom_panel(self, surface):
-        panel = pygame.Rect(40, 462, 920, 70)
+        panel = pygame.Rect(40, 458, 920, 68)
         draw_wood_panel(surface, panel, border=3, corner=8, fill=(34, 28, 20))
         mode = "AI AUTO" if self.auto_play else ("TU CHOI" if self.mouse_play else "AI")
         draw_text(surface, f"N={self.board_size} | {ALGORITHMS[self.algo_index]['name']} | Che do: {mode}",
@@ -777,12 +818,15 @@ class EightQueensScene(BaseScene):
     def _start_solver(self, auto_play):
         n = self.board_size
         name = ALGORITHMS[self.algo_index]["name"]
+        manual_count = self._queen_count() if self.mouse_play else 0
+        seed_board = self.current_board.copy() if manual_count else None
+
         if name == "Backtracking":
-            self.steps = backtracking_steps(n)
+            self.steps = backtracking_steps(n, initial_board=seed_board)
         elif name == "Forward Checking":
-            self.steps = forward_checking_steps(n)
+            self.steps = forward_checking_steps(n, initial_board=seed_board)
         else:
-            self.steps = min_conflicts_steps(n)
+            self.steps = min_conflicts_steps(n, initial_board=seed_board)
 
         self.step_idx = 0
         self.step_timer = 0.0
@@ -792,8 +836,12 @@ class EightQueensScene(BaseScene):
         self.selected_cell = None
         self.current_board = self.steps[0]["board"].copy()
         self.solution_board = self._solution_from_steps()
-        self.placed_count = 0
+        self.placed_count = manual_count
         self.auto_button.text = "STOP" if auto_play else "AUTO"
+        if manual_count:
+            self.status = f"AI bat dau tu {manual_count} quan hau ban da dat va se di chuyen khi can"
+        else:
+            self.status = f"AI bat dau tu ban co rong bang {name}"
 
     def _advance_auto_step(self):
         self._advance_ai_step()
@@ -837,17 +885,26 @@ class EightQueensScene(BaseScene):
 
     def _select_algorithm(self, index):
         self.algo_index = index
-        self.steps = [{"board": self._empty_board(), "status": "Bat dau moi"}]
-        self.current_board = self._empty_board()
-        self.solution_board = self._empty_board()
-        self.step_idx = 0
-        self.step_timer = 0.0
         self.auto_play = False
-        self.mouse_play = True
-        self.done = False
-        self.placed_count = 0
-        self.selected_cell = None
         self.auto_button.text = "AUTO"
+        self.step_timer = 0.0
+        if self.mouse_play and not self.done:
+            # Giữ nguyên các quân người chơi đã đặt; RUN/AUTO sẽ tiếp tục từ đó.
+            self.steps = [{
+                "board": self.current_board.copy(),
+                "status": f"Da chon {ALGORITHMS[index]['name']}",
+                "action": "manual",
+            }]
+            self.step_idx = 0
+            self.solution_board = self._empty_board()
+            self.selected_cell = None
+            self.status = (
+                f"Da chon {ALGORITHMS[index]['name']}. "
+                f"Giu nguyen {self._queen_count()} quan da dat."
+            )
+            return
+        self._reset()
+        self.algo_index = index
         self.status = f"Da chon {ALGORITHMS[index]['name']}"
 
     def _set_board_size(self, size):
@@ -972,12 +1029,12 @@ class EightQueensScene(BaseScene):
                            max(1, bottom - top - inset * 2))
 
     def _info_panel_rect(self):
-        return pygame.Rect(520, 120, 430, 340)
+        return pygame.Rect(388, 116, 572, 336)
 
     def _size_button_rect(self, size):
         panel = self._info_panel_rect()
         index = size - MIN_QUEENS
-        return pygame.Rect(panel.left + 112 + index * 48, panel.top + 76, 40, 28)
+        return pygame.Rect(panel.left + 118 + index * 56, panel.top + 76, 46, 28)
 
     def _size_from_key(self, key):
         key_map = {
