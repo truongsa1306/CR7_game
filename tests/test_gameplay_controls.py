@@ -1,6 +1,16 @@
 import unittest
 
 from entities.grid_cell import ORTHOGONAL_DIRECTIONS, GridModel
+from scenes.caro_scene import (
+    AI,
+    EMPTY,
+    HUMAN,
+    best_move_ai,
+    chance_probabilities,
+    evaluate,
+    expectimax,
+    get_moves,
+)
 from scenes.gameplay_scene import GameplayScene
 from systems.algorithms.blind_search import bfs_steps
 from systems.game_state import GameState
@@ -77,6 +87,40 @@ class GameplayControlsTests(unittest.TestCase):
         next(bfs_steps(grid))
         revealed = {(col, row) for (col, row), cell in grid.cells.items() if cell.revealed}
         self.assertEqual(revealed, {(0, 0), (2, 2)})
+
+
+class CaroExpectimaxTests(unittest.TestCase):
+    def test_chance_node_uses_uniform_average(self):
+        board = [
+            [AI, EMPTY, EMPTY],
+            [EMPTY, HUMAN, EMPTY],
+            [EMPTY, EMPTY, EMPTY],
+        ]
+        moves = get_moves(board)
+        probabilities = chance_probabilities(moves)
+        self.assertAlmostEqual(sum(probabilities), 1.0)
+        for probability in probabilities:
+            self.assertAlmostEqual(probability, 1 / len(moves))
+
+        values = []
+        for row, col in moves:
+            board[row][col] = HUMAN
+            values.append(evaluate(board))
+            board[row][col] = EMPTY
+
+        nodes = [0]
+        self.assertAlmostEqual(expectimax(board, 1, False, nodes), sum(values) / len(values))
+
+    def test_expectimax_is_deterministic(self):
+        board = [
+            [AI, EMPTY, EMPTY],
+            [EMPTY, HUMAN, EMPTY],
+            [EMPTY, EMPTY, EMPTY],
+        ]
+        first = best_move_ai([row[:] for row in board], "Expectimax", 3)
+        second = best_move_ai([row[:] for row in board], "Expectimax", 3)
+        self.assertEqual(first[0], second[0])
+        self.assertAlmostEqual(first[3], second[3])
 
 
 if __name__ == '__main__':

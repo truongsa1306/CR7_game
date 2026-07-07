@@ -7,8 +7,6 @@ recent move.
 
 from __future__ import annotations
 
-import random
-
 import pygame
 
 import config as C
@@ -46,7 +44,7 @@ ALGORITHMS = [
     {
         "name": "Expectimax",
         "depth": 3,
-        "desc": "Đánh giá nước đi theo kỳ vọng khi đối thủ không hoàn toàn tối ưu.",
+        "desc": "Tinh ky vong chance node: E=sum(p_i*v_i), p_i=1/k cho doi thu ngau nhien.",
     },
 ]
 
@@ -232,6 +230,14 @@ def alphabeta(board, depth, alpha, beta, is_max, nodes):
     return best
 
 
+def chance_probabilities(moves):
+    """Uniform chance model: the human/random player can pick any child move."""
+    if not moves:
+        return []
+    probability = 1.0 / len(moves)
+    return [probability for _ in moves]
+
+
 def expectimax(board, depth, is_max, nodes):
     nodes[0] += 1
     if check_win(board, AI):
@@ -250,13 +256,13 @@ def expectimax(board, depth, is_max, nodes):
             board[row][col] = EMPTY
         return best
 
-    total = 0.0
-    for row, col in moves:
+    expected_value = 0.0
+    for probability, (row, col) in zip(chance_probabilities(moves), moves):
         board[row][col] = HUMAN
         value = expectimax(board, depth - 1, True, nodes)
-        total += value * 0.8 + random.uniform(-50, 50) * 0.2
+        expected_value += probability * value
         board[row][col] = EMPTY
-    return total / len(moves) if moves else 0.0
+    return expected_value
 
 
 def best_move_ai(board, algorithm_name, depth):
